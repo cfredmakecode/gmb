@@ -100,35 +100,84 @@ internal void gmbInitFontBitmap(gmbstate *state) {
   };
 #pragma pack(pop)
   bitmap *b = (bitmap *)f;
-  // if (f) {
-  //   DEBUGPlatformFreeMemory(f);
-  // }
+  assert(b->Compression == 3);
+  assert(b->Height > 0);
+  assert(b->BitsPerPixel = 32);
+  assert(b->AlphaMask == 0);
   // note(caf): DEBUG ONLY
   assert(b->SizeOfBitmap + sizeof(gmbstate) < state->memory->permanentBytes);
   state->fontBitmap.width = b->Width;
   state->fontBitmap.height = b->Height;
   state->fontBitmap.stride = b->BitsPerPixel / 8;
+  //
+  int redOffsetShift = 0;
+  int blueOffsetShift = 0;
+  int greenOffsetShift = 0;
+  int alphaOffsetShift = 0;
+  // find the first bit that is set for each of the masks
+  for (int ioff = 0; ioff < 32; ioff++) {
+    if (b->RedMask & 1 << ioff) {
+      redOffsetShift = ioff;
+      break;
+    }
+  }
+  for (int ioff = 0; ioff < 32; ioff++) {
+    if (b->BlueMask & 1 << ioff) {
+      blueOffsetShift = ioff;
+      break;
+    }
+  }
+  for (int ioff = 0; ioff < 32; ioff++) {
+    if (b->GreenMask & 1 << ioff) {
+      greenOffsetShift = ioff;
+      break;
+    }
+  }
+  for (int ioff = 0; ioff < 32; ioff++) {
+    if (b->AlphaMask & 1 << ioff) {
+      alphaOffsetShift = ioff;
+      break;
+    }
+  }
   // important(caf): assumes 4 bytes per pixel always,
   // assumes sizeof operator returns count in bytes
   // copy the bitmap pixels only into game memory
-  uint32 *s = (uint32 *)((uint8 *)b + b->BitmapOffset);
+  uint32 a, bl, g, r;
+  uint32 *bitmapStart = (uint32 *)((uint8 *)b + b->BitmapOffset);
   uint32 *d = (uint32 *)((uint8 *)state->memory->permanent + sizeof(gmbstate));
-  for (int i = 0; i < b->SizeOfBitmap / 4; i++) {
-    *d = *s;
-    d++;
-    s++;
+  // note(caf): assumes target bitmap is top-down and source is bottom up
+  // start walking source pixels at the beginning of the last row
+  for (int y = b->Height - 1; y >= 0; y--) {
+    for (int x = 0; x < b->Width; x++) {
+      uint32 *s = bitmapStart + (y * b->Width) + x;
+      // note(caf): we automatically truncate to the bits we want by casting to
+      // uint8 first
+      a = (uint32)(uint8)(*s >> alphaOffsetShift);
+      bl = (uint32)(uint8)(*s >> blueOffsetShift);
+      g = (uint32)(uint8)(*s >> greenOffsetShift);
+      r = (uint32)(uint8)(*s >> redOffsetShift);
+      // note(caf): assumes target/internal bitmap format ABGR
+      *d = uint32(a << 24 | bl << 16 | g << 8 | r << 0);
+      d++;
+    }
   }
   state->fontBitmap.pixels =
       (void *)((uint8 *)state->memory->permanent + sizeof(gmbstate));
+  // todo(caf): create quick and dirty text bitmap atlas to blit
   // todo(caf)      : ditch the manual memory management like this,
   // switch to arena
-  // const char *ptr =
-  // "0123456789"; // ABCDEFGHIJKLMNOPQRSTUVWXYZ.?!:;, ";
-  // while (*ptr != '\0') {
-  // todo:
-  // create quick and dirty text tileset to blit from uint8 *pixel =
-  //     (uint8 *)state->fontBitmap->pixels;
-  // ptr++;
+  if (f) {
+    DEBUGPlatformFreeMemory(f);
+  }
+}
+
+internal int findLeastBitSet(int haystack) {
+  for (int ioff = 0; ioff < 32; ioff++) {
+    if (haystack & 1 << ioff) {
+      return ioff;
+    }
+  }
+  return 0;
 }
 
 // note(caf): needs to have a way to choose areas to copy to/from, needs to
