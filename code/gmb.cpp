@@ -24,11 +24,41 @@ typedef struct inputbuffer {
 } inputbuffer;
 
 typedef struct gmbstate {
-  gmbmemory *memory;
+  gmbmemory *memory; // REMOVEME after testing (caf)
+  memory_arena arena;
   uint32 ticks;
   bool32 isInitialized;
   framebuffer fontBitmap;
 } gmbstate;
+
+#pragma pack(push, 1)
+typedef struct bitmap {
+  WORD FileType;      /* File type, always 4D42h ("BM") */
+  DWORD FileSize;     /* Size of the file in bytes */
+  WORD Reserved1;     /* Always 0 */
+  WORD Reserved2;     /* Always 0 */
+  DWORD BitmapOffset; /* Starting position of image data in bytes */
+  DWORD Size;         /* Size of this header in bytes */
+  LONG Width;         /* Image width in pixels */
+  LONG Height;        /* Image height in pixels */
+  WORD Planes;        /* Number of color planes */
+  WORD BitsPerPixel;  /* Number of bits per pixel */
+  /* Fields added for Windows 3.x follow this line */
+  DWORD Compression;     /* Compression methods used */
+  DWORD SizeOfBitmap;    /* Size of bitmap in bytes */
+  LONG HorzResolution;   /* Horizontal resolution in pixels per meter */
+  LONG VertResolution;   /* Vertical resolution in pixels per meter */
+  DWORD ColorsUsed;      /* Number of colors in the image */
+  DWORD ColorsImportant; /* Minimum number of important colors */
+  DWORD RedMask;         /* Mask identifying bits of red component */
+  DWORD GreenMask;       /* Mask identifying bits of green component */
+  DWORD BlueMask;        /* Mask identifying bits of blue component */
+  DWORD AlphaMask;       /* Mask identifying bits of alpha component */
+  // note(caf): this isn't a fully correct representation! we're ignoring
+  // anything between these struct members and the bitmap offset / start of
+  // pixel data. oh well
+} bitmap;
+#pragma pack(pop)
 
 internal void gmbMainLoop(gmbmemory *memory, framebuffer *fb,
                           uint32 usElapsedSinceLast);
@@ -37,23 +67,82 @@ internal void gmbDrawWeirdTexture(gmbstate *state, framebuffer *fb);
 internal void gmbInitFontBitmap(gmbstate *state);
 internal void gmbCopyBitmap(gmbstate *state, framebuffer *source,
                             framebuffer *dest);
+internal framebuffer *gmbLoadBitmap(memory_arena *arena, char *filename);
 
 internal void gmbMainLoop(gmbmemory *memory, framebuffer *fb,
                           uint32 usElapsedSinceLast) {
-  assert(memory->permanentBytes >= sizeof(gmbstate));
+  assert(memory->permanentBytes >= sizeof(gmbstate) + sizeof(memory_arena));
   gmbstate *state = (gmbstate *)memory->permanent;
   // note(caf): we rely on the fact that we expect pre-zeroed memory buffers
   // from
   // the platform layer quite a bit. for example, right here.
   if (!state->isInitialized) {
+    // init main arena
+    state->arena.size = memory->permanentBytes - sizeof(gmbstate);
+    state->arena.memory =
+        (uint32 *)((uint8 *)memory->permanent + sizeof(gmbstate));
     state->memory = memory;
     state->ticks = 0;
-    gmbInitFontBitmap(state);
+    state->fontBitmap =
+        *gmbLoadBitmap(&state->arena, (char *)"W:\\gmb\\data\\font.bmp");
+    // gmbInitFontBitmap(state);
     state->isInitialized = true;
   }
   gmbDrawWeirdTexture(state, fb);
   gmbCopyBitmap(state, &state->fontBitmap, fb);
   ++state->ticks;
+}
+
+// note(caf): DEBUG ONLY
+internal framebuffer *gmbLoadBitmap(memory_arena *arena, char *filename) {
+  void *readIntoMem = DEBUGPlatformReadEntireFile(filename);
+  bitmap *b = (bitmap *)readIntoMem;
+  assert(b->Compression == 3);
+  assert(b->Height > 0);
+  assert(b->BitsPerPixel = 32);
+  assert(b->AlphaMask == 0);
+  assert(b->SizeOfBitmap < arena->size - arena->curOffset);
+
+  // find the first bit that is set for each of the masks
+  int redOffsetShift = findLeastBitSet(b->RedMask);
+  int blueOffsetShift = findLeastBitSet(b->BlueMask);
+  int greenOffsetShift = findLeastBitSet(b->GreenMask);
+  int alphaOffsetShift = findLeastBitSet(b->AlphaMask);
+
+  // important(caf): assumes 4 bytes per pixel always!
+  framebuffer *f = (framebuffer *)PushStruct(arena, framebuffer, 1);
+  assert(f);
+  f->width = b->Width;
+  f->height = b->Height;
+  f->stride = b->BitsPerPixel / 8;
+  uint32 a, bl, g, r;
+  uint32 *src = (uint32 *)((uint8 *)b + b->BitmapOffset);
+  uint32 *dest = (uint32 *)PushBytes(arena, b->SizeOfBitmap);
+  assert(dest);
+  f->pixels = (void *)dest;
+
+  // copy the bitmap pixels into memory
+  // note(caf): assumes target bitmap is top-down and source is bottom up
+  // start walking source pixels at the beginning of the last row
+  for (int y = b->Height - 1; y >= 0; y--) {
+    for (int x = 0; x < b->Width; x++) {
+      uint32 *s = src + (y * b->Width) + x;
+      // note(caf): we automatically truncate to the bits we want by casting to
+      // uint8 first
+      a = (uint32)(uint8)(*s >> alphaOffsetShift);
+      bl = (uint32)(uint8)(*s >> blueOffsetShift);
+      g = (uint32)(uint8)(*s >> greenOffsetShift);
+      r = (uint32)(uint8)(*s >> redOffsetShift);
+      // note(caf): assumes target/internal bitmap format ABGR
+      *dest = uint32(a << 24 | bl << 16 | g << 8 | r << 0);
+      dest++;
+    }
+  }
+
+  if (readIntoMem) {
+    DEBUGPlatformFreeMemory(readIntoMem);
+  }
+  return f;
 }
 
 internal void gmbInitFontBitmap(gmbstate *state) {
@@ -109,39 +198,13 @@ internal void gmbInitFontBitmap(gmbstate *state) {
   state->fontBitmap.width = b->Width;
   state->fontBitmap.height = b->Height;
   state->fontBitmap.stride = b->BitsPerPixel / 8;
-  //
-  int redOffsetShift = 0;
-  int blueOffsetShift = 0;
-  int greenOffsetShift = 0;
-  int alphaOffsetShift = 0;
   // find the first bit that is set for each of the masks
-  for (int ioff = 0; ioff < 32; ioff++) {
-    if (b->RedMask & 1 << ioff) {
-      redOffsetShift = ioff;
-      break;
-    }
-  }
-  for (int ioff = 0; ioff < 32; ioff++) {
-    if (b->BlueMask & 1 << ioff) {
-      blueOffsetShift = ioff;
-      break;
-    }
-  }
-  for (int ioff = 0; ioff < 32; ioff++) {
-    if (b->GreenMask & 1 << ioff) {
-      greenOffsetShift = ioff;
-      break;
-    }
-  }
-  for (int ioff = 0; ioff < 32; ioff++) {
-    if (b->AlphaMask & 1 << ioff) {
-      alphaOffsetShift = ioff;
-      break;
-    }
-  }
+  int redOffsetShift = findLeastBitSet(b->RedMask);
+  int blueOffsetShift = findLeastBitSet(b->BlueMask);
+  int greenOffsetShift = findLeastBitSet(b->GreenMask);
+  int alphaOffsetShift = findLeastBitSet(b->AlphaMask);
   // important(caf): assumes 4 bytes per pixel always,
-  // assumes sizeof operator returns count in bytes
-  // copy the bitmap pixels only into game memory
+  // copy the bitmap pixels only into game permanent memory
   uint32 a, bl, g, r;
   uint32 *bitmapStart = (uint32 *)((uint8 *)b + b->BitmapOffset);
   uint32 *d = (uint32 *)((uint8 *)state->memory->permanent + sizeof(gmbstate));
@@ -169,15 +232,6 @@ internal void gmbInitFontBitmap(gmbstate *state) {
   if (f) {
     DEBUGPlatformFreeMemory(f);
   }
-}
-
-internal int findLeastBitSet(int haystack) {
-  for (int ioff = 0; ioff < 32; ioff++) {
-    if (haystack & 1 << ioff) {
-      return ioff;
-    }
-  }
-  return 0;
 }
 
 // note(caf): needs to have a way to choose areas to copy to/from, needs to
