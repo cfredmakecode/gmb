@@ -1,4 +1,5 @@
 #include "gmb_platform.h"
+#include "stdio.h"
 #include "windows.h"
 
 #define global static
@@ -61,16 +62,22 @@ typedef struct bitmap {
 #pragma pack(pop)
 
 internal void gmbMainLoop(gmbmemory *memory, framebuffer *fb,
-                          uint32 usElapsedSinceLast);
+                          real32 msElapsedSinceLast);
 // internal void gmbDrawInfo(char *text, framebuffer *fb);
 internal void gmbDrawWeirdTexture(gmbstate *state, framebuffer *fb);
 internal void gmbInitFontBitmap(gmbstate *state);
 internal void gmbCopyBitmap(gmbstate *state, framebuffer *source,
                             framebuffer *dest);
 internal framebuffer *gmbLoadBitmap(memory_arena *arena, char *filename);
+internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
+                                  int sy, int swidth, int sheight,
+                                  framebuffer *dest, int dx, int dy, int dwidth,
+                                  int dheight);
+internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
+                          int y);
 
 internal void gmbMainLoop(gmbmemory *memory, framebuffer *fb,
-                          uint32 usElapsedSinceLast) {
+                          real32 msElapsedSinceLast) {
   assert(memory->permanentBytes >= sizeof(gmbstate) + sizeof(memory_arena));
   gmbstate *state = (gmbstate *)memory->permanent;
   // note(caf): we rely on the fact that we expect pre-zeroed memory buffers
@@ -89,7 +96,13 @@ internal void gmbMainLoop(gmbmemory *memory, framebuffer *fb,
     state->isInitialized = true;
   }
   gmbDrawWeirdTexture(state, fb);
-  gmbCopyBitmap(state, &state->fontBitmap, fb);
+  char t[16];
+  sprintf(t, "%2.1f MS", msElapsedSinceLast);
+  gmbDrawText(state, fb, t, 0, 0);
+  gmbDrawText(state, fb,
+              (char *)"THIS IS ARBITRARY TEXT PRINTED FROM BITMAP FONT TILES!",
+              10, 400);
+  // gmbCopyBitmap(state, &state->fontBitmap, fb);
   ++state->ticks;
 }
 
@@ -145,92 +158,105 @@ internal framebuffer *gmbLoadBitmap(memory_arena *arena, char *filename) {
   return f;
 }
 
-internal void gmbInitFontBitmap(gmbstate *state) {
-  void *f = DEBUGPlatformReadEntireFile((char *)"W:/gmb/data/font.bmp");
+// note(caf): x,y is top left corner of where to start text
+internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
+                          int y) {
   char *characters =
-      (char *)"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:;.,()!?=-+%*/{}<>'\"`_^\\|";
-#pragma pack(push, 1)
-  struct bitmap {
-    WORD FileType;      /* File type, always 4D42h ("BM") */
-    DWORD FileSize;     /* Size of the file in bytes */
-    WORD Reserved1;     /* Always 0 */
-    WORD Reserved2;     /* Always 0 */
-    DWORD BitmapOffset; /* Starting position of image data in bytes */
-    DWORD Size;         /* Size of this header in bytes */
-    LONG Width;         /* Image width in pixels */
-    LONG Height;        /* Image height in pixels */
-    WORD Planes;        /* Number of color planes */
-    WORD BitsPerPixel;  /* Number of bits per pixel */
-    /* Fields added for Windows 3.x follow this line */
-    DWORD Compression;     /* Compression methods used */
-    DWORD SizeOfBitmap;    /* Size of bitmap in bytes */
-    LONG HorzResolution;   /* Horizontal resolution in pixels per meter */
-    LONG VertResolution;   /* Vertical resolution in pixels per meter */
-    DWORD ColorsUsed;      /* Number of colors in the image */
-    DWORD ColorsImportant; /* Minimum number of important colors */
-    DWORD RedMask;         /* Mask identifying bits of red component */
-    DWORD GreenMask;       /* Mask identifying bits of green component */
-    DWORD BlueMask;        /* Mask identifying bits of blue component */
-    DWORD AlphaMask;       /* Mask identifying bits of alpha component */
-    DWORD CSType;          /* Color space type */
-    LONG RedX;             /* X coordinate of red endpoint */
-    LONG RedY;             /* Y coordinate of red endpoint */
-    LONG RedZ;             /* Z coordinate of red endpoint */
-    LONG GreenX;           /* X coordinate of green endpoint */
-    LONG GreenY;           /* Y coordinate of green endpoint */
-    LONG GreenZ;           /* Z coordinate of green endpoint */
-    LONG BlueX;            /* X coordinate of blue endpoint */
-    LONG BlueY;            /* Y coordinate of blue endpoint */
-    LONG BlueZ;            /* Z coordinate of blue endpoint */
-    DWORD GammaRed;        /* Gamma red coordinate scale value */
-    DWORD GammaGreen;      /* Gamma green coordinate scale value */
-    DWORD GammaBlue;       /* Gamma blue coordinate scale value */
-    void *pixels;
-  };
-#pragma pack(pop)
-  bitmap *b = (bitmap *)f;
-  assert(b->Compression == 3);
-  assert(b->Height > 0);
-  assert(b->BitsPerPixel = 32);
-  assert(b->AlphaMask == 0);
-  // note(caf): DEBUG ONLY
-  assert(b->SizeOfBitmap + sizeof(gmbstate) < state->memory->permanentBytes);
-  state->fontBitmap.width = b->Width;
-  state->fontBitmap.height = b->Height;
-  state->fontBitmap.stride = b->BitsPerPixel / 8;
-  // find the first bit that is set for each of the masks
-  int redOffsetShift = findLeastBitSet(b->RedMask);
-  int blueOffsetShift = findLeastBitSet(b->BlueMask);
-  int greenOffsetShift = findLeastBitSet(b->GreenMask);
-  int alphaOffsetShift = findLeastBitSet(b->AlphaMask);
-  // important(caf): assumes 4 bytes per pixel always,
-  // copy the bitmap pixels only into game permanent memory
-  uint32 a, bl, g, r;
-  uint32 *bitmapStart = (uint32 *)((uint8 *)b + b->BitmapOffset);
-  uint32 *d = (uint32 *)((uint8 *)state->memory->permanent + sizeof(gmbstate));
-  // note(caf): assumes target bitmap is top-down and source is bottom up
-  // start walking source pixels at the beginning of the last row
-  for (int y = b->Height - 1; y >= 0; y--) {
-    for (int x = 0; x < b->Width; x++) {
-      uint32 *s = bitmapStart + (y * b->Width) + x;
-      // note(caf): we automatically truncate to the bits we want by casting to
-      // uint8 first
-      a = (uint32)(uint8)(*s >> alphaOffsetShift);
-      bl = (uint32)(uint8)(*s >> blueOffsetShift);
-      g = (uint32)(uint8)(*s >> greenOffsetShift);
-      r = (uint32)(uint8)(*s >> redOffsetShift);
-      // note(caf): assumes target/internal bitmap format ABGR
-      *d = uint32(a << 24 | bl << 16 | g << 8 | r << 0);
-      d++;
+      (char
+           *)"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:;.,()!?=-+%*/{}<>'\"`_^\\| ";
+  const int charWidth = 8;
+  const int charHeight = 11;
+  const int pxBetweenLines = 10;
+  // calc the size of our texture atlas. todo(caf): setup asset management
+  int atlasWidth = state->fontBitmap.width / charWidth;
+  int atlasHeight = state->fontBitmap.height / charHeight;
+  // for (int y = 0; y < atlasHeight; y++) {
+  //   for (int x = 0; x < atlasWidth; x++) {
+  //     gmbCopyBitmapOffset(
+  //         state, &state->fontBitmap, x * charWidth, y * charHeight, 8, 11,
+  //         dest,
+  //         200 + (x * (charWidth + 10)), 200 + (y * (charHeight + 10)), 8,
+  //         11);
+  //   }
+  // }
+  assert(text);
+  uint32 currentPosX = x;
+  uint32 currentPosY = y;
+  uint32 len = strlen(text);
+  for (char *i = text; *i != '\0'; i++) {
+    // for each letter in passed text, match the tile offset manually mapped
+    // to our bitmap font tiles already setup
+    for (int j = 0; j < strlen(characters); j++) {
+      if (*i == characters[j]) {
+        gmbCopyBitmapOffset(state, &state->fontBitmap,
+                            (j % atlasWidth) * charWidth,
+                            (j / atlasWidth) * charHeight, 8, 11, dest,
+                            currentPosX, currentPosY, 8, 11);
+        currentPosX += charWidth;
+        break;
+      }
     }
   }
-  state->fontBitmap.pixels =
-      (void *)((uint8 *)state->memory->permanent + sizeof(gmbstate));
-  // todo(caf): create quick and dirty text bitmap atlas to blit
-  // todo(caf)      : ditch the manual memory management like this,
-  // switch to arena
-  if (f) {
-    DEBUGPlatformFreeMemory(f);
+  // uint32 currentPosX = x;
+  // uint32 currentPosY = y;
+  // for (int i = 0; i < 61; i++, currentPosX += charWidth) {
+  //   gmbCopyBitmapOffset(state, &state->fontBitmap, (i % atlasWidth) *
+  //   charWidth,
+  //                       (i / atlasWidth) * charHeight, 8, 11, dest,
+  //                       currentPosX,
+  //                       currentPosY, 8, 11);
+  // }
+}
+
+//
+// woff = 8
+// hoff = 11
+// wtiles = 10
+// htiles = 8
+//
+//  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
+// 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+// 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+// 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+// 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+// 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+// 60, 61, 62, 63, 64, 65, 66, 67, 68, 69,
+// 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+//
+// tile 33
+// x = (tile%wtiles) * woff
+// y = (tile/wtiles) * hoff
+
+// NOTE(caf): does not do any scaling yet
+internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
+                                  int sy, int swidth, int sheight,
+                                  framebuffer *dest, int dx, int dy, int dwidth,
+                                  int dheight) {
+  assert(swidth == dwidth);
+  assert(sheight == dheight);
+  assert(src->width >= sx + swidth);
+  assert(src->height >= sy + sheight);
+  assert(dest->width >= dx + dwidth);
+  assert(dest->height >= dy + dheight);
+
+  uint32 *spixel = (uint32 *)src->pixels + (sy * src->width) + sx;
+  uint32 *dpixel = (uint32 *)dest->pixels + (dy * dest->width) + dx;
+  for (int y = 0; y < sheight; ++y) {
+    for (int x = 0; x < swidth; ++x) {
+      // uint32 r1 = sy * src->width;
+      // uint32 r2 = sx + x;
+      // uint32 r3 = y * src->width;
+      // uint32 r4 = r1 + r2 + r3;
+      spixel =
+          (uint32 *)src->pixels + (sy * src->width) + sx + (y * src->width) + x;
+      // uint32 h2 = dy * dest->width;
+      // uint32 h3 = dx + x;
+      // uint32 h4 = y * dest->width;
+      // uint32 h5 = blah2 + blah3 + blah4;
+      dpixel = (uint32 *)dest->pixels + (dy * dest->width) + dx +
+               (y * dest->width) + x;
+      *dpixel = *spixel;
+    }
   }
 }
 

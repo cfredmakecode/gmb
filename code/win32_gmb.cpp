@@ -109,6 +109,7 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
   LARGE_INTEGER freq;
   QueryPerformanceFrequency(&freq);
   uint32 elapsed = curpf.QuadPart - lastpf.QuadPart;
+  real32 ms = 0;
   framebuffer fb = {0};
   while (running) {
     QueryPerformanceCounter(&startFrame);
@@ -125,15 +126,15 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
     fb.pixels = screenBuffer.buf;
     QueryPerformanceCounter(&curpf);
     elapsed = curpf.QuadPart - lastpf.QuadPart;
-    /// todo(caf): pass some memory
-    gmbMainLoop(&memory, &fb, (uint32)(elapsed / freq.QuadPart));
+    lastpf = curpf;
+    ms = (real32)((real32)elapsed / (real32)freq.QuadPart) * 1000;
+    gmbMainLoop(&memory, &fb, ms); //(elapsed / freq.QuadPart));
     WIN32WINDOWSIZE size = Win32GetWindowSize(window);
     Win32BlitScreen(hdc, &screenBuffer, size.height, size.width);
     ++win32ticks;
-    QueryPerformanceCounter(&curpf);
-    lastpf = curpf;
+    // QueryPerformanceCounter(&curpf);
     elapsed = curpf.QuadPart - startFrame.QuadPart;
-    real32 ms = (real32)((real32)elapsed / (real32)freq.QuadPart) * 1000;
+    ms = (real32)((real32)elapsed / (real32)freq.QuadPart) * 1000;
     int msToSleep = int(targetMS) - (int)ms; // intentionally truncating to int
     if (msToSleep > 0) {
       Sleep(msToSleep);
@@ -151,13 +152,14 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
 
 // note(caf); expects elapsed to already be turned into ms
 internal void Win32DebugDrawFrameTime(HDC hdc, real32 elapsedms, int ticks) {
+  return;
   RECT pos = {0};
-  // pos.bottom = 48;
+  // pos.top = 48;
   // pos.right = 96;
   POINT pt;
   GetCursorPos(&pt);
   char ms[256];
-  sprintf_s(ms, sizeof(ms), "%f ms\n", elapsedms);
+  sprintf_s(ms, sizeof(ms), "%2.1f ms\n", elapsedms);
   OutputDebugStringA(ms);
   int res = DrawText(hdc, ms, -1, &pos,
                      DT_BOTTOM | DT_NOCLIP | DT_NOPREFIX | DT_VCENTER);
