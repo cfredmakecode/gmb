@@ -1,40 +1,17 @@
-#include "gmb.cpp"
+#include "gmb.h"
 
-#include "stdio.h"
-#include "windows.h"
+#include "win32_gmb.h"
 
-typedef struct WIN32SCREENBUFFER {
-  void *buf;
-  int height;
-  int width;
-  int depth;
-  BITMAPINFO info;
-} WIN32SCREENBUFFER;
-typedef struct WIN32WINDOWSIZE {
-  int height;
-  int width;
-} WIN32WINDOWSIZE;
-
-LRESULT CALLBACK gmbWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam,
-                               LPARAM lParam);
-// read it in the strongbad TGS voice
-void errord(char *reason);
-internal void Win32ResizeWindow(WIN32SCREENBUFFER *buf, int height, int width);
-internal WIN32WINDOWSIZE Win32GetWindowSize(HWND window);
-internal void Win32BlitScreen(HDC hdc, WIN32SCREENBUFFER *buf, int height,
-                              int width);
-internal void Win32DebugDrawFrameTime(HDC hdc, real32 elapsed, int ticks);
-
-void *DEBUGPlatformReadEntireFile(char *filename) {
+GMBPLATFORMREADENTIREFILE(DEBUGPlatformReadEntireFile) {
   HANDLE f = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, 0,
                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, 0);
   if (f == INVALID_HANDLE_VALUE) {
-    errord("DEBUGPlatformReadEntireFile");
+    errord((char *)"DEBUGPlatformReadEntireFile");
     return 0;
   }
   LARGE_INTEGER size;
   if (!GetFileSizeEx(f, &size)) {
-    errord("DEBUGPlatformReadEntireFile");
+    errord((char *)"DEBUGPlatformReadEntireFile");
     return 0;
   }
   void *buf = VirtualAlloc(0, (DWORD)size.QuadPart, MEM_RESERVE | MEM_COMMIT,
@@ -43,25 +20,47 @@ void *DEBUGPlatformReadEntireFile(char *filename) {
   if (!ReadFile(f, buf, (DWORD)size.QuadPart, &bytesRead, 0)) {
     CloseHandle(f);
     VirtualFree(buf, 0, 0);
-    errord("DEBUGPlatformReadEntireFile");
+    errord((char *)"DEBUGPlatformReadEntireFile");
     return 0;
   }
   CloseHandle(f);
   if (!(size.QuadPart == bytesRead)) {
     VirtualFree(buf, 0, 0);
-    errord("DEBUGPlatformReadEntireFile");
+    errord((char *)"DEBUGPlatformReadEntireFile");
     return 0;
   }
   return buf;
 }
-void DEBUGPlatformFreeMemory(void *memory) {
+
+GMBPLATFORMFREEFILE(DEBUGPlatformFreeFile) {
   if (memory) {
     VirtualFree(memory, 0, 0);
   }
 }
-bool32 DEBUGPlatformWriteEntireFile(char *filename, uint32 bytes,
-                                    void *memory) {
-  return 0;
+
+GMBPLATFORMWRITEENTIREFILE(DEBUGPlatformWriteEntireFile) { return 0; }
+
+typedef struct win32_gmbdll {
+  gmb_main_loop *gmbMainLoop;
+  HMODULE Handle;
+} win32_gmbdll;
+
+internal win32_gmbdll win32_InitGmbDll() {
+  win32_gmbdll gmbDLL = {0};
+  gmbDLL.Handle = LoadLibraryA("gmb.dll");
+  if (!gmbDLL.Handle) {
+    gmbDLL.gmbMainLoop = &gmbMainLoopStub;
+    errord((char *)"Failed to LoadLibraryA()");
+  } else {
+    gmb_main_loop *ml =
+        (gmb_main_loop *)GetProcAddress(gmbDLL.Handle, "gmbMainLoop");
+    if (!ml) {
+      gmbDLL.gmbMainLoop = &gmbMainLoopStub;
+      errord((char *)"Failed to GetProcAddress()");
+    }
+    gmbDLL.gmbMainLoop = ml;
+  }
+  return gmbDLL;
 }
 internal const int bitDepth = 32;
 internal const real32 targetMS = real32(1000.0 / 60.0);
@@ -69,6 +68,7 @@ global bool32 running = true;
 global WIN32SCREENBUFFER screenBuffer = {0};
 int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
             int cmdshow) {
+  win32_gmbdll gmbDLL = win32_InitGmbDll();
   WNDCLASS tclass = {0};
   tclass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
   tclass.lpfnWndProc = &gmbWindowProc;
@@ -77,25 +77,35 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
 
   ATOM windowClass = RegisterClassA(&tclass);
   if (windowClass == 0) {
-    errord("RegisterClassA");
+    errord((char *)"RegisterClassA");
   }
   HWND window = CreateWindow("gmb_class_lol", "gmb window",
                              WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT,
                              CW_USEDEFAULT, 800, 600, 0, 0, instance, 0);
   if (window == 0) {
-    errord("CreateWindow");
+    errord((char *)"CreateWindow");
   }
   WIN32WINDOWSIZE size = Win32GetWindowSize(window);
   Win32ResizeWindow(&screenBuffer, size.height, size.width);
 
-  void *freshmemory =
-      VirtualAlloc(0, Megabytes(64), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+#ifdef WIN32_GMB_INTERNAL
+  LPVOID StartAddress = (LPVOID)Tibibytes(2);
+#else
+  LPVOID StartAddress = 0;
+#endif
+  void *freshmemory = VirtualAlloc(StartAddress, Mibibytes(64),
+                                   MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
   if (!freshmemory) {
-    errord("VirtualAlloc permanent mem");
+    errord((char *)"VirtualAlloc permanent mem");
   }
+  gmbstate state = {0};
   gmbmemory memory = {0};
-  memory.permanent = freshmemory;
-  memory.permanentBytes = Megabytes(64);
+  state.memory = &memory;
+  state.memory->permanent = freshmemory;
+  state.memory->permanentBytes = Mibibytes(64);
+  state.DEBUGPlatformReadEntireFile = &DEBUGPlatformReadEntireFile;
+  state.DEBUGPlatformFreeFile = &DEBUGPlatformFreeFile;
+  state.DEBUGPlatformWriteEntireFile = &DEBUGPlatformWriteEntireFile;
 
   MSG msg;
   HDC hdc = GetDC(window);
@@ -108,7 +118,7 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
   startFrame = curpf;
   LARGE_INTEGER freq;
   QueryPerformanceFrequency(&freq);
-  uint32 elapsed = curpf.QuadPart - lastpf.QuadPart;
+  uint64 elapsed = curpf.QuadPart - lastpf.QuadPart;
   real32 ms = 0;
   framebuffer fb = {0};
   while (running) {
@@ -128,7 +138,7 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
     elapsed = curpf.QuadPart - lastpf.QuadPart;
     lastpf = curpf;
     ms = (real32)((real32)elapsed / (real32)freq.QuadPart) * 1000;
-    gmbMainLoop(&memory, &fb, ms); //(elapsed / freq.QuadPart));
+    gmbDLL.gmbMainLoop(&state, &fb, ms); //(elapsed / freq.QuadPart));
     WIN32WINDOWSIZE size = Win32GetWindowSize(window);
     Win32BlitScreen(hdc, &screenBuffer, size.height, size.width);
     ++win32ticks;
@@ -145,14 +155,13 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
       ms = (real32)((real32)elapsed / (real32)freq.QuadPart) * 1000;
       Sleep(0); // do nothing sleep
     }
-    Win32DebugDrawFrameTime(hdc, ms, win32ticks);
+    // Win32DebugDrawFrameTime(hdc, ms, win32ticks);
   }
   return 0;
 }
 
 // note(caf); expects elapsed to already be turned into ms
 internal void Win32DebugDrawFrameTime(HDC hdc, real32 elapsedms, int ticks) {
-  return;
   RECT pos = {0};
   // pos.top = 48;
   // pos.right = 96;
@@ -164,7 +173,7 @@ internal void Win32DebugDrawFrameTime(HDC hdc, real32 elapsedms, int ticks) {
   int res = DrawText(hdc, ms, -1, &pos,
                      DT_BOTTOM | DT_NOCLIP | DT_NOPREFIX | DT_VCENTER);
   if (res == 0) {
-    errord("DrawText");
+    errord((char *)"DrawText");
   }
 }
 
@@ -174,7 +183,7 @@ internal void Win32BlitScreen(HDC hdc, WIN32SCREENBUFFER *buf, int height,
       StretchDIBits(hdc, 0, 0, width, height, 0, 0, buf->width, buf->height,
                     buf->buf, &buf->info, DIB_RGB_COLORS, SRCCOPY);
   if (res == 0) {
-    errord("StretchDIBits");
+    errord((char *)"StretchDIBits");
   }
 }
 
@@ -190,7 +199,7 @@ internal void Win32ResizeWindow(WIN32SCREENBUFFER *buf, int height, int width) {
   buf->info.bmiHeader.biWidth = buf->width;
   buf->info.bmiHeader.biHeight = -buf->height;
   buf->info.bmiHeader.biPlanes = 1;
-  buf->info.bmiHeader.biBitCount = buf->depth;
+  buf->info.bmiHeader.biBitCount = (WORD)buf->depth;
   buf->info.bmiHeader.biCompression = BI_RGB;
   int size = buf->depth * buf->height * buf->width;
   buf->info.bmiHeader.biSizeImage = size;
@@ -198,7 +207,7 @@ internal void Win32ResizeWindow(WIN32SCREENBUFFER *buf, int height, int width) {
   void *newbuf =
       (void *)VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
   if (newbuf == 0) {
-    errord("VirtualAlloc fbuffer");
+    errord((char *)"VirtualAlloc fbuffer");
   }
   buf->buf = newbuf;
 }
@@ -232,7 +241,7 @@ LRESULT CALLBACK gmbWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam,
 internal WIN32WINDOWSIZE Win32GetWindowSize(HWND window) {
   RECT rect;
   if (!GetWindowRect(window, &rect)) {
-    errord("GetWindowRect");
+    errord((char *)"GetWindowRect");
   }
   WIN32WINDOWSIZE size = {0};
   size.width = rect.right - rect.left;
@@ -252,6 +261,6 @@ void errord(char *reason) {
               out);
     MessageBoxA(0, errtext, 0, MB_OK);
   }
-  assert(0);
+  assert(!*errtext);
   exit(-1);
 }

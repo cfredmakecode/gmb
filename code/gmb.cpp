@@ -1,103 +1,27 @@
-#include "gmb_platform.h"
+#include "gmb.h"
+
+#include "win32_gmb.h"
+
 #include "stdio.h"
 #include "windows.h"
 
-#define global static
-#define internal static
-
-// assumes 32-bit fb always
-typedef struct framebuffer {
-  int height;
-  int width;
-  int stride; // if the distance between horizontal lines is different than
-              // simply (width * 4 bytes)
-  void *pixels;
-} framebuffer;
-
-// assume 16-bit depth
-typedef struct soundbuffer {
-  int hz;
-  int bufLen;
-  uint16 *samples;
-} soundbuffer;
-
-typedef struct inputbuffer {
-} inputbuffer;
-
-typedef struct gmbstate {
-  gmbmemory *memory; // REMOVEME after testing (caf)
-  memory_arena arena;
-  uint32 ticks;
-  bool32 isInitialized;
-  framebuffer fontBitmap;
-} gmbstate;
-
-#pragma pack(push, 1)
-typedef struct bitmap {
-  WORD FileType;      /* File type, always 4D42h ("BM") */
-  DWORD FileSize;     /* Size of the file in bytes */
-  WORD Reserved1;     /* Always 0 */
-  WORD Reserved2;     /* Always 0 */
-  DWORD BitmapOffset; /* Starting position of image data in bytes */
-  DWORD Size;         /* Size of this header in bytes */
-  LONG Width;         /* Image width in pixels */
-  LONG Height;        /* Image height in pixels */
-  WORD Planes;        /* Number of color planes */
-  WORD BitsPerPixel;  /* Number of bits per pixel */
-  /* Fields added for Windows 3.x follow this line */
-  DWORD Compression;     /* Compression methods used */
-  DWORD SizeOfBitmap;    /* Size of bitmap in bytes */
-  LONG HorzResolution;   /* Horizontal resolution in pixels per meter */
-  LONG VertResolution;   /* Vertical resolution in pixels per meter */
-  DWORD ColorsUsed;      /* Number of colors in the image */
-  DWORD ColorsImportant; /* Minimum number of important colors */
-  DWORD RedMask;         /* Mask identifying bits of red component */
-  DWORD GreenMask;       /* Mask identifying bits of green component */
-  DWORD BlueMask;        /* Mask identifying bits of blue component */
-  DWORD AlphaMask;       /* Mask identifying bits of alpha component */
-  // note(caf): this isn't a fully correct representation! we're ignoring
-  // anything between these struct members and the bitmap offset / start of
-  // pixel data. oh well
-} bitmap;
-#pragma pack(pop)
-
-internal void gmbMainLoop(gmbmemory *memory, framebuffer *fb,
-                          real32 msElapsedSinceLast);
-// internal void gmbDrawInfo(char *text, framebuffer *fb);
-internal void gmbDrawWeirdTexture(gmbstate *state, framebuffer *fb);
-internal void gmbInitFontBitmap(gmbstate *state);
-internal void gmbCopyBitmap(gmbstate *state, framebuffer *source,
-                            framebuffer *dest);
-internal framebuffer *gmbLoadBitmap(memory_arena *arena, char *filename);
-internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
-                                  int sy, int swidth, int sheight,
-                                  framebuffer *dest, int dx, int dy, int dwidth,
-                                  int dheight);
-internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
-                          int y);
-
-internal void gmbMainLoop(gmbmemory *memory, framebuffer *fb,
-                          real32 msElapsedSinceLast) {
-  assert(memory->permanentBytes >= sizeof(gmbstate) + sizeof(memory_arena));
-  gmbstate *state = (gmbstate *)memory->permanent;
+extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
   // note(caf): we rely on the fact that we expect pre-zeroed memory buffers
-  // from
-  // the platform layer quite a bit. for example, right here.
+  // from the platform layer quite a bit. for example, right here.
   if (!state->isInitialized) {
     // init main arena
-    state->arena.size = memory->permanentBytes - sizeof(gmbstate);
+    state->arena.size = state->memory->permanentBytes - sizeof(gmbstate);
     state->arena.memory =
-        (uint32 *)((uint8 *)memory->permanent + sizeof(gmbstate));
-    state->memory = memory;
+        (uint32 *)((uint8 *)state->memory->permanent + sizeof(gmbstate));
     state->ticks = 0;
     state->fontBitmap =
-        *gmbLoadBitmap(&state->arena, (char *)"W:\\gmb\\data\\font.bmp");
+        *gmbLoadBitmap(state, &state->arena, (char *)"W:\\gmb\\data\\font.bmp");
     // gmbInitFontBitmap(state);
     state->isInitialized = true;
   }
   gmbDrawWeirdTexture(state, fb);
   char t[16];
-  sprintf(t, "%2.1f MS", msElapsedSinceLast);
+  sprintf_s(t, sizeof(t), "%2.1f MS", msElapsedSinceLast);
   gmbDrawText(state, fb, t, 0, 0);
   gmbDrawText(state, fb,
               (char *)"THIS IS ARBITRARY TEXT PRINTED FROM BITMAP FONT TILES!",
@@ -107,12 +31,13 @@ internal void gmbMainLoop(gmbmemory *memory, framebuffer *fb,
 }
 
 // note(caf): DEBUG ONLY
-internal framebuffer *gmbLoadBitmap(memory_arena *arena, char *filename) {
-  void *readIntoMem = DEBUGPlatformReadEntireFile(filename);
+internal framebuffer *gmbLoadBitmap(gmbstate *state, memory_arena *arena,
+                                    char *filename) {
+  void *readIntoMem = state->DEBUGPlatformReadEntireFile(filename);
   bitmap *b = (bitmap *)readIntoMem;
   assert(b->Compression == 3);
   assert(b->Height > 0);
-  assert(b->BitsPerPixel = 32);
+  assert(b->BitsPerPixel == 32);
   assert(b->AlphaMask == 0);
   assert(b->SizeOfBitmap < arena->size - arena->curOffset);
 
@@ -153,7 +78,7 @@ internal framebuffer *gmbLoadBitmap(memory_arena *arena, char *filename) {
   }
 
   if (readIntoMem) {
-    DEBUGPlatformFreeMemory(readIntoMem);
+    state->DEBUGPlatformFreeFile(readIntoMem);
   }
   return f;
 }
@@ -166,23 +91,14 @@ internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
            *)"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:;.,()!?=-+%*/{}<>'\"`_^\\| ";
   const int charWidth = 8;
   const int charHeight = 11;
-  const int pxBetweenLines = 10;
+  // const int pxBetweenLines = 10;
   // calc the size of our texture atlas. todo(caf): setup asset management
   int atlasWidth = state->fontBitmap.width / charWidth;
-  int atlasHeight = state->fontBitmap.height / charHeight;
-  // for (int y = 0; y < atlasHeight; y++) {
-  //   for (int x = 0; x < atlasWidth; x++) {
-  //     gmbCopyBitmapOffset(
-  //         state, &state->fontBitmap, x * charWidth, y * charHeight, 8, 11,
-  //         dest,
-  //         200 + (x * (charWidth + 10)), 200 + (y * (charHeight + 10)), 8,
-  //         11);
-  //   }
-  // }
+  // int atlasHeight = state->fontBitmap.height / charHeight;
   assert(text);
   uint32 currentPosX = x;
   uint32 currentPosY = y;
-  uint32 len = strlen(text);
+  // size_t len = strlen(text);
   for (char *i = text; *i != '\0'; i++) {
     // for each letter in passed text, match the tile offset manually mapped
     // to our bitmap font tiles already setup
@@ -197,35 +113,7 @@ internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
       }
     }
   }
-  // uint32 currentPosX = x;
-  // uint32 currentPosY = y;
-  // for (int i = 0; i < 61; i++, currentPosX += charWidth) {
-  //   gmbCopyBitmapOffset(state, &state->fontBitmap, (i % atlasWidth) *
-  //   charWidth,
-  //                       (i / atlasWidth) * charHeight, 8, 11, dest,
-  //                       currentPosX,
-  //                       currentPosY, 8, 11);
-  // }
 }
-
-//
-// woff = 8
-// hoff = 11
-// wtiles = 10
-// htiles = 8
-//
-//  0,  1,  2,  3,  4,  5,  6,  7,  8,  9,
-// 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-// 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-// 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
-// 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
-// 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
-// 60, 61, 62, 63, 64, 65, 66, 67, 68, 69,
-// 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
-//
-// tile 33
-// x = (tile%wtiles) * woff
-// y = (tile/wtiles) * hoff
 
 // NOTE(caf): does not do any scaling yet
 internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
@@ -286,4 +174,26 @@ internal void gmbDrawWeirdTexture(gmbstate *state, framebuffer *fb) {
       pixel++;
     }
   }
+}
+
+int findLeastBitSet(int haystack) {
+  for (int ioff = 0; ioff < 32; ioff++) {
+    if (haystack & 1 << ioff) {
+      return ioff;
+    }
+  }
+  return 0;
+}
+
+// very quick and naive arena allocation
+void *PushBytes(memory_arena *arena, int bytes) {
+  if (!arena) {
+    return 0;
+  }
+  assert(arena->curOffset + bytes < arena->size);
+  // bump the offset by the size and return a pointer to the value before
+  // increasing it
+  void *ret = (uint8 *)arena->memory + arena->curOffset;
+  arena->curOffset += bytes;
+  return ret;
 }
