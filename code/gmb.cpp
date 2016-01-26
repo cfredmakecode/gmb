@@ -22,10 +22,16 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
   gmbDrawWeirdTexture(state, fb);
   char t[16];
   sprintf_s(t, sizeof(t), "%2.1f MS", msElapsedSinceLast);
-  gmbDrawText(state, fb, t, 0, 0);
   gmbDrawText(state, fb,
               (char *)"THIS IS ARBITRARY TEXT PRINTED FROM BITMAP FONT TILES!",
               10, 400);
+  // and some floaty moving updatey text
+  gmbDrawText(state, fb, t, 0, 0);
+  sprintf_s(t, sizeof(t), "%u", state->ticks);
+  gmbDrawText(state, fb, t, state->ticks % (fb->width - 50),
+              state->ticks % (fb->height - 50));
+  gmbDrawText(state, fb, (char *)"TICKS", state->ticks % (fb->width - 50),
+              (state->ticks % (fb->height - 50)) + 11);
   // gmbCopyBitmap(state, &state->fontBitmap, fb);
   ++state->ticks;
 }
