@@ -36,8 +36,8 @@ typedef struct memory_arena {
 typedef struct framebuffer {
   int height;
   int width;
-  int stride; // if the distance between horizontal lines is different than
-              // simply (width * 4 bytes)
+  int stride;  // if the distance between horizontal lines is different than
+               // simply (width * 4 bytes)
   void *pixels;
 } framebuffer;
 
@@ -48,16 +48,73 @@ typedef struct soundbuffer {
   uint16 *samples;
 } soundbuffer;
 
+// yes, it's a huge honking waste of space to alloc 8 bytes per key
+typedef struct gmbkey {
+  uint8 id;
+  bool32 endedDown;
+  int32 count;
+} gmbkey;
+
+// note(caf): for ease of use, we'll map the keys represented by A-Z to their
+// correct position
+// as they would be in ASCII. so starting at 0x41 (65);
 typedef struct inputbuffer {
+  uint32 kbutton;
+
+  gmbkey mouse1;
+  gmbkey mouse2;
+  gmbkey ignored1;  // note(caf): MSDN explains this as Control-Break
+                    // processing. does that mean ctrl-c?
+  gmbkey mouse3;
+  gmbkey mouse4;
+  gmbkey mouse5;
+  gmbkey ignored2;
+  gmbkey backspace;
+  gmbkey tab;
+  gmbkey ignored3[3];
+  // 0x0D
+  gmbkey enter;
+  gmbkey ignored4[2];
+  // 0x10
+  gmbkey shift;
+  gmbkey ctrl;
+  gmbkey alt;
+  gmbkey pauseBreak;
+  gmbkey capslock;
+  gmbkey ignored5[6];  // bunch of IME buttons? be careful, msdn docs don't
+                       // immediately make it obvious multiple table rows have
+                       // the same ID
+  gmbkey esc;
+  gmbkey ignored6[4];
+  // 0x20
+  gmbkey space;
+
+  gmbkey keys[0xFF];
 } inputbuffer;
+
+struct point {
+  int x, y;
+};
+
+struct pointStack {
+  int cur;
+  struct point *stack;
+  int maxSize;
+};
 
 #define GMBPLATFORMREADENTIREFILE(name) void *name(char *filename)
 typedef GMBPLATFORMREADENTIREFILE(gmb_platform_read_entire_file);
 #define GMBPLATFORMFREEFILE(name) void name(void *memory)
 typedef GMBPLATFORMFREEFILE(gmb_platform_free_file);
-#define GMBPLATFORMWRITEENTIREFILE(name)                                       \
+#define GMBPLATFORMWRITEENTIREFILE(name) \
   bool32 name(char *filename, uint32 bytes, void *memory)
 typedef GMBPLATFORMWRITEENTIREFILE(gmb_platform_write_entire_file);
+
+struct maze {
+  int height;
+  int width;
+  uint8 *cells;
+};
 
 typedef struct gmbstate {
   gmbmemory *memory;
@@ -65,6 +122,8 @@ typedef struct gmbstate {
   uint32 ticks;
   bool32 isInitialized;
   framebuffer fontBitmap;
+  struct maze Maze;
+  struct pointStack pts;
   // some function pointers callable into the platform layer
   gmb_platform_read_entire_file *DEBUGPlatformReadEntireFile;
   gmb_platform_free_file *DEBUGPlatformFreeFile;
@@ -94,16 +153,19 @@ typedef struct bitmap {
   uint32 GreenMask;       /* Mask identifying bits of green component */
   uint32 BlueMask;        /* Mask identifying bits of blue component */
   uint32 AlphaMask;       /* Mask identifying bits of alpha component */
-  // note(caf): this isn't a fully correct representation! we're ignoring
-  // anything between these struct members and the bitmap offset / start of
+  // note(caf): this isn't a fully correct representation! we're
+  // ignoring
+  // anything between these struct members and the bitmap offset / start
+  // of
   // pixel data. oh well
 } bitmap;
 
 #pragma pack(pop)
-#define assert(thing)                                                          \
-  if (!(thing)) {                                                              \
-    char *blowup = 0;                                                          \
-    *blowup = 'Y';                                                             \
+
+#define assert(thing) \
+  if (!(thing)) {     \
+    char *blowup = 0; \
+    *blowup = 'Y';    \
   }
 
 #define Kibibytes(n) (n * 1024LL)
@@ -113,7 +175,7 @@ typedef struct bitmap {
 
 #define PushStruct(arena, type, count) PushBytes(arena, sizeof(type) * (count))
 
-#define GMBMAINLOOP(name)                                                      \
+#define GMBMAINLOOP(name) \
   void name(gmbstate *state, framebuffer *fb, real32 msElapsedSinceLast)
 typedef GMBMAINLOOP(gmb_main_loop);
 GMBMAINLOOP(gmbMainLoopStub) {}
@@ -123,8 +185,8 @@ internal void gmbDrawWeirdTexture(gmbstate *state, framebuffer *fb);
 internal void gmbInitFontBitmap(gmbstate *state);
 internal void gmbCopyBitmap(gmbstate *state, framebuffer *source,
                             framebuffer *dest);
-framebuffer *gmbLoadBitmap(gmbstate *state, memory_arena *arena,
-                           char *filename);
+internal framebuffer *gmbLoadBitmap(gmbstate *state, memory_arena *arena,
+                                    char *filename);
 internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
                                   int sy, int swidth, int sheight,
                                   framebuffer *dest, int dx, int dy, int dwidth,
@@ -133,5 +195,24 @@ internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
                           int y);
 internal int findLeastBitSet(int haystack);
 internal void *PushBytes(memory_arena *arena, int bytes);
+
+internal void setMazeCell(struct maze *m, int x, int y, uint8 value) {
+  assert((x < m->width && x >= 0) && (y < m->height && y >= 0));
+  *(m->cells + ((y * m->width) + x)) = value;
+}
+
+internal uint8 getMazeCell(struct maze *m, int x, int y) {
+  assert((x < m->width && x >= 0) && (y < m->height && y >= 0));
+  return (*(m->cells + ((y * m->width) + x)));
+}
+
+internal bool32 mazeCellIsEmpty(struct maze *m, int x, int y) {
+  if ((x < m->width && x >= 0) && (y < m->height && y >= 0)) {
+    if (getMazeCell(m, x, y) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
 
 #endif

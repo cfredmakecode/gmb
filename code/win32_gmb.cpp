@@ -1,4 +1,5 @@
 #include "gmb.h"
+#include "gmb_vec.h"
 
 #include "win32_gmb.h"
 
@@ -138,14 +139,14 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
     elapsed = curpf.QuadPart - lastpf.QuadPart;
     lastpf = curpf;
     ms = (real32)((real32)elapsed / (real32)freq.QuadPart) * 1000;
-    gmbDLL.gmbMainLoop(&state, &fb, ms); //(elapsed / freq.QuadPart));
+    gmbDLL.gmbMainLoop(&state, &fb, ms);  //(elapsed / freq.QuadPart));
     WIN32WINDOWSIZE size = Win32GetWindowSize(window);
     Win32BlitScreen(hdc, &screenBuffer, size.height, size.width);
     ++win32ticks;
     // QueryPerformanceCounter(&curpf);
     elapsed = curpf.QuadPart - startFrame.QuadPart;
     ms = (real32)((real32)elapsed / (real32)freq.QuadPart) * 1000;
-    int msToSleep = int(targetMS) - (int)ms; // intentionally truncating to int
+    int msToSleep = int(targetMS) - (int)ms;  // intentionally truncating to int
     if (msToSleep > 0) {
       Sleep(msToSleep);
     }
@@ -153,7 +154,7 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
       QueryPerformanceCounter(&curpf);
       elapsed = curpf.QuadPart - startFrame.QuadPart;
       ms = (real32)((real32)elapsed / (real32)freq.QuadPart) * 1000;
-      Sleep(0); // do nothing sleep
+      Sleep(0);  // do nothing sleep
     }
     // Win32DebugDrawFrameTime(hdc, ms, win32ticks);
   }
@@ -212,28 +213,28 @@ internal void Win32ResizeWindow(WIN32SCREENBUFFER *buf, int height, int width) {
   buf->buf = newbuf;
 }
 
-LRESULT CALLBACK gmbWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam,
-                               LPARAM lParam) {
+LRESULT CALLBACK
+gmbWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
   LRESULT res = 0;
   switch (uMsg) {
-  case WM_QUIT:
-  case WM_CLOSE:
-    running = 0;
-    break;
-  case WM_KEYUP:
-    switch (wParam) {
-    case VK_ESCAPE:
-    case 'Q':
+    case WM_QUIT:
+    case WM_CLOSE:
       running = 0;
       break;
+    case WM_KEYUP:
+      switch (wParam) {
+        case VK_ESCAPE:
+        case 'Q':
+          running = 0;
+          break;
+      }
+    case WM_SIZE: {
+      WIN32WINDOWSIZE size = Win32GetWindowSize(hwnd);
+      Win32ResizeWindow(&screenBuffer, size.height, size.width);
+      break;
     }
-  case WM_SIZE: {
-    WIN32WINDOWSIZE size = Win32GetWindowSize(hwnd);
-    Win32ResizeWindow(&screenBuffer, size.height, size.width);
-    break;
-  }
-  default:
-    res = DefWindowProc(hwnd, uMsg, wParam, lParam);
+    default:
+      res = DefWindowProc(hwnd, uMsg, wParam, lParam);
   }
   return res;
 }
@@ -254,9 +255,9 @@ void errord(char *reason) {
   char errtext[512];
   char *out;
   DWORD lerr = GetLastError();
-  if (FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER |
-                         FORMAT_MESSAGE_FROM_SYSTEM,
-                     0, lerr, 0, (LPTSTR)&out, 256, 0)) {
+  if (FormatMessageA(
+          FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, 0, lerr,
+          0, (LPTSTR)&out, 256, 0)) {
     sprintf_s(errtext, sizeof(errtext), "%s: error: %ld: %s", reason, lerr,
               out);
     MessageBoxA(0, errtext, 0, MB_OK);
