@@ -34,7 +34,7 @@ point popPoint(struct pointStack *stack) {
   stack->stack--;
   stack->cur--;
   if (stack->cur < 0) {
-    stack->stack = 0;  // intentionally blowup later if we messed something up
+    stack->stack = 0; // intentionally blowup later if we messed something up
     // assumption: the stack is used and emptied ONCE
   }
   return t;
@@ -54,7 +54,7 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
     // gmbInitFontBitmap(state);
 
     // setup our maze once
-    state->Maze.width = 16;
+    state->Maze.width = 32;
     state->Maze.height = 16;
     state->Maze.cells = (uint8 *)PushBytes(
         &state->arena, sizeof(uint8) * state->Maze.width * state->Maze.height);
@@ -68,10 +68,12 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
         (point *)PushBytes(&state->arena, sizeof(point) * MAXWORKINGPOINTS);
 
     // pick random point at which to start
-    point cur = {(rand() + 32768) % 16, (rand() + 32768) % 16};
+    srand(2341);
+    point cur = {(rand() + 32768) % state->Maze.width,
+                 (rand() + 32768) % state->Maze.height};
     pushPoint(&state->pts, cur);
 
-    struct maze m = state->Maze;  // only so we don't have to type th etnire
+    struct maze m = state->Maze; // only so we don't have to type th etnire
     // damn thing every time
     struct keepTrackOfDirectionThing {
       point p;
@@ -130,20 +132,20 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
         // which is the above inverted. somehow
         uint8 from = 0;
         switch (temp.direction) {
-          case upDoor:
-            from = downDoor;
-            break;
-          case downDoor:
-            from = upDoor;
-            break;
-          case rightDoor:
-            from = leftDoor;
-            break;
-          case leftDoor:
-            from = rightDoor;
-            break;
+        case upDoor:
+          from = downDoor;
+          break;
+        case downDoor:
+          from = upDoor;
+          break;
+        case rightDoor:
+          from = leftDoor;
+          break;
+        case leftDoor:
+          from = rightDoor;
+          break;
         }
-        setMazeCell(&m, cur.x, cur.y, from);
+        setMazeCell(&m, cur.x, cur.y, getMazeCell(&m, cur.x, cur.y) | from);
         pushPoint(&state->pts, cur);
       } else {
         cur = popPoint(&state->pts);
@@ -152,19 +154,19 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
 
     state->isInitialized = true;
   }
-  gmbDrawWeirdTexture(state, fb);
+  // gmbDrawWeirdTexture(state, fb);
   char t[16];
   sprintf_s(t, sizeof(t), "%2.1f MS", msElapsedSinceLast);
   gmbDrawText(state, fb,
               (char *)"THIS IS ARBITRARY TEXT PRINTED FROM BITMAP FONT TILES!",
               10, 400);
   // and some floaty moving updatey text
-  gmbDrawText(state, fb, t, 0, 0);
-  sprintf_s(t, sizeof(t), "%u", state->ticks);
-  gmbDrawText(state, fb, t, state->ticks % (fb->width - 50),
-              state->ticks % (fb->height - 50));
-  gmbDrawText(state, fb, (char *)"TICKS", state->ticks % (fb->width - 50),
-              (state->ticks % (fb->height - 50)) + 11);
+  // gmbDrawText(state, fb, t, 0, 0);
+  // sprintf_s(t, sizeof(t), "%u", state->ticks);
+  // gmbDrawText(state, fb, t, state->ticks % (fb->width - 50),
+  //             state->ticks % (fb->height - 50));
+  // gmbDrawText(state, fb, (char *)"TICKS", state->ticks % (fb->width - 50),
+  //             (state->ticks % (fb->height - 50)) + 11);
   // gmbCopyBitmap(state, &state->fontBitmap, fb);
   ++state->ticks;
 
@@ -211,8 +213,8 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
 
   struct maze m = state->Maze;
 
-  for (int y = 0; y < 16; y++) {
-    for (int x = 0; x < 16; x++) {
+  for (int y = 0; y < m.height; y++) {
+    for (int x = 0; x < m.width; x++) {
       // slowly as possible clear to 0 first
       for (int i = 0; i < 256; i++) {
         if ((getMazeCell(&m, x, y) & upDoor && upMask[i] == 1) ||
@@ -225,7 +227,7 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
         }
       }
       gmbCopyBitmapOffset(state, &cell, 0, 0, 16, 16, fb, (x * 16) + 100,
-                          (y * 16) + 100, 16, 16);
+                          (fb->height - (y * 16) + -300), 16, 16);
     }
   }
 }
