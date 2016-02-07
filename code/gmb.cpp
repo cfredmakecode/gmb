@@ -1,44 +1,9 @@
 #include "gmb.h"
-
-#include "win32_gmb.h"
+#include "gmb_maze.cpp"
 
 #include "stdio.h"
-#include "windows.h"
-
-// we need to keep track of which "sides" of a maze's block
-// have been travelled open during the generation process
-#define upDoor 1
-#define downDoor upDoor << 1
-#define leftDoor downDoor << 1
-#define rightDoor leftDoor << 1
-
-// when building a maze we need a place to keep our in-progress worked block
-// positions
-#define MAXWORKINGPOINTS 512
-
-void pushPoint(struct pointStack *stack, struct point pt);
-point popPoint(struct pointStack *stack);
-
-void pushPoint(struct pointStack *stack, struct point pt) {
-  assert(stack);
-  assert(stack->cur + 1 < stack->maxSize);
-  stack->stack++;
-  stack->cur++;
-  *stack->stack = pt;
-}
-
-point popPoint(struct pointStack *stack) {
-  assert(stack);
-  assert(stack->cur >= 0);
-  struct point t = *stack->stack;
-  stack->stack--;
-  stack->cur--;
-  if (stack->cur < 0) {
-    stack->stack = 0; // intentionally blowup later if we messed something up
-    // assumption: the stack is used and emptied ONCE
-  }
-  return t;
-}
+#include "stdlib.h"
+#include "string.h"
 
 extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
   // note(caf): we rely on the fact that we expect pre-zeroed memory buffers
@@ -58,10 +23,6 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
     state->Maze.height = 16;
     state->Maze.cells = (uint8 *)PushBytes(
         &state->arena, sizeof(uint8) * state->Maze.width * state->Maze.height);
-
-    for (int i = 0; i < 256; i++) {
-      // state->maze[i] |= 1 << (rand() % 4);
-    }
 
     state->pts.maxSize = MAXWORKINGPOINTS;
     state->pts.stack =

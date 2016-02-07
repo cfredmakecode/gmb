@@ -1,15 +1,9 @@
 #ifndef GMB_PLATFORM_H
 #define GMB_PLATFORM_H
+#include "gmb_basics.h"
+
 #include "stdio.h"
 #include "windows.h"
-
-// note(caf): re-def'ing these to shut up clang-llvm
-// it'd make more sense to figure out how to do it properly, oh well
-#define global static
-#define local_global static
-#define internal static
-typedef float real32;
-//
 
 typedef struct WIN32SCREENBUFFER {
   void *buf;
@@ -18,6 +12,7 @@ typedef struct WIN32SCREENBUFFER {
   int depth;
   BITMAPINFO info;
 } WIN32SCREENBUFFER;
+
 typedef struct WIN32WINDOWSIZE {
   int height;
   int width;

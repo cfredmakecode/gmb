@@ -1,23 +1,18 @@
 #ifndef GMB_H
 #define GMB_H
-#include "stdint.h"
 
-#define global static
-#define local_global static
-#define internal static
+#include "gmb_basics.h"
+#include "gmb_maze.h"
 
-typedef uint8_t uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
-typedef int8_t int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
+typedef struct memory_arena {
+  uint32 size;
+  uint32 *memory;
+  uint32 curOffset;
+} memory_arena;
 
-typedef int32 bool32;
-typedef float real32;
-typedef double real64;
+internal void *PushBytes(memory_arena *arena, int bytes);
+#define PushStruct(arena, type, count) PushBytes(arena, sizeof(type) * (count))
+internal int findLeastBitSet(int haystack);
 
 typedef struct gmbmemory {
   void *permanent;
@@ -26,18 +21,12 @@ typedef struct gmbmemory {
   uint32 temporaryBytes;
 } gmbmemory;
 
-typedef struct memory_arena {
-  uint32 size;
-  uint32 *memory;
-  uint32 curOffset;
-} memory_arena;
-
 // assumes 32-bit fb always
 typedef struct framebuffer {
   int height;
   int width;
-  int stride;  // if the distance between horizontal lines is different than
-               // simply (width * 4 bytes)
+  int stride; // if the distance between horizontal lines is different than
+              // simply (width * 4 bytes)
   void *pixels;
 } framebuffer;
 
@@ -63,8 +52,8 @@ typedef struct inputbuffer {
 
   gmbkey mouse1;
   gmbkey mouse2;
-  gmbkey ignored1;  // note(caf): MSDN explains this as Control-Break
-                    // processing. does that mean ctrl-c?
+  gmbkey ignored1; // note(caf): MSDN explains this as Control-Break
+                   // processing. does that mean ctrl-c?
   gmbkey mouse3;
   gmbkey mouse4;
   gmbkey mouse5;
@@ -81,9 +70,9 @@ typedef struct inputbuffer {
   gmbkey alt;
   gmbkey pauseBreak;
   gmbkey capslock;
-  gmbkey ignored5[6];  // bunch of IME buttons? be careful, msdn docs don't
-                       // immediately make it obvious multiple table rows have
-                       // the same ID
+  gmbkey ignored5[6]; // bunch of IME buttons? be careful, msdn docs don't
+                      // immediately make it obvious multiple table rows have
+                      // the same ID
   gmbkey esc;
   gmbkey ignored6[4];
   // 0x20
@@ -92,29 +81,13 @@ typedef struct inputbuffer {
   gmbkey keys[0xFF];
 } inputbuffer;
 
-struct point {
-  int x, y;
-};
-
-struct pointStack {
-  int cur;
-  struct point *stack;
-  int maxSize;
-};
-
 #define GMBPLATFORMREADENTIREFILE(name) void *name(char *filename)
 typedef GMBPLATFORMREADENTIREFILE(gmb_platform_read_entire_file);
 #define GMBPLATFORMFREEFILE(name) void name(void *memory)
 typedef GMBPLATFORMFREEFILE(gmb_platform_free_file);
-#define GMBPLATFORMWRITEENTIREFILE(name) \
+#define GMBPLATFORMWRITEENTIREFILE(name)                                       \
   bool32 name(char *filename, uint32 bytes, void *memory)
 typedef GMBPLATFORMWRITEENTIREFILE(gmb_platform_write_entire_file);
-
-struct maze {
-  int height;
-  int width;
-  uint8 *cells;
-};
 
 typedef struct gmbstate {
   gmbmemory *memory;
@@ -162,20 +135,7 @@ typedef struct bitmap {
 
 #pragma pack(pop)
 
-#define assert(thing) \
-  if (!(thing)) {     \
-    char *blowup = 0; \
-    *blowup = 'Y';    \
-  }
-
-#define Kibibytes(n) (n * 1024LL)
-#define Mibibytes(n) Kibibytes(n * 1024LL)
-#define Gibibytes(n) Mibibytes(n * 1024LL)
-#define Tibibytes(n) Gibibytes(n * 1024LL)
-
-#define PushStruct(arena, type, count) PushBytes(arena, sizeof(type) * (count))
-
-#define GMBMAINLOOP(name) \
+#define GMBMAINLOOP(name)                                                      \
   void name(gmbstate *state, framebuffer *fb, real32 msElapsedSinceLast)
 typedef GMBMAINLOOP(gmb_main_loop);
 GMBMAINLOOP(gmbMainLoopStub) {}
@@ -193,26 +153,5 @@ internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
                                   int dheight);
 internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
                           int y);
-internal int findLeastBitSet(int haystack);
-internal void *PushBytes(memory_arena *arena, int bytes);
-
-internal void setMazeCell(struct maze *m, int x, int y, uint8 value) {
-  assert((x < m->width && x >= 0) && (y < m->height && y >= 0));
-  *(m->cells + ((y * m->width) + x)) = value;
-}
-
-internal uint8 getMazeCell(struct maze *m, int x, int y) {
-  assert((x < m->width && x >= 0) && (y < m->height && y >= 0));
-  return (*(m->cells + ((y * m->width) + x)));
-}
-
-internal bool32 mazeCellIsEmpty(struct maze *m, int x, int y) {
-  if ((x < m->width && x >= 0) && (y < m->height && y >= 0)) {
-    if (getMazeCell(m, x, y) == 0) {
-      return 1;
-    }
-  }
-  return 0;
-}
 
 #endif
