@@ -2,7 +2,6 @@
 #define GMB_PLATFORM_H
 #include "gmb_basics.h"
 
-#include "stdio.h"
 #include "windows.h"
 
 typedef struct WIN32SCREENBUFFER {

@@ -5,6 +5,8 @@
 #include "stdlib.h"
 #include "string.h"
 
+global framebuffer mazeImage;
+
 extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
   // note(caf): we rely on the fact that we expect pre-zeroed memory buffers
   // from the platform layer quite a bit. for example, right here.
@@ -19,101 +21,14 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
     // gmbInitFontBitmap(state);
 
     // setup our maze once
-    state->Maze.width = 32;
-    state->Maze.height = 16;
-    state->Maze.cells = (uint8 *)PushBytes(
-        &state->arena, sizeof(uint8) * state->Maze.width * state->Maze.height);
-
-    state->pts.maxSize = MAXWORKINGPOINTS;
-    state->pts.stack =
-        (point *)PushBytes(&state->arena, sizeof(point) * MAXWORKINGPOINTS);
-
-    // pick random point at which to start
-    srand(2341);
-    point cur = {(rand() + 32768) % state->Maze.width,
-                 (rand() + 32768) % state->Maze.height};
-    pushPoint(&state->pts, cur);
-
-    struct maze m = state->Maze; // only so we don't have to type th etnire
-    // damn thing every time
-    struct keepTrackOfDirectionThing {
-      point p;
-      uint8 direction;
-    };
-    // until all are popped
-    while (state->pts.cur > 0) {
-      struct keepTrackOfDirectionThing open[4] = {};
-      int openCount = 0;
-      if (mazeCellIsEmpty(&m, cur.x, cur.y + 1)) {
-        // up is empty
-        struct keepTrackOfDirectionThing p = {};
-        p.p.x = cur.x;
-        p.p.y = cur.y + 1;
-        p.direction = upDoor;
-        open[openCount] = p;
-        openCount++;
-      }
-      if (mazeCellIsEmpty(&m, cur.x, cur.y - 1)) {
-        // down is empty
-        struct keepTrackOfDirectionThing p = {};
-        p.p.x = cur.x;
-        p.p.y = cur.y - 1;
-        p.direction = downDoor;
-        open[openCount] = p;
-        openCount++;
-      }
-      if (mazeCellIsEmpty(&m, cur.x + 1, cur.y)) {
-        // right is empty
-        struct keepTrackOfDirectionThing p = {};
-        p.p.x = cur.x + 1;
-        p.p.y = cur.y;
-        p.direction = rightDoor;
-        open[openCount] = p;
-        openCount++;
-      }
-      if (mazeCellIsEmpty(&m, cur.x - 1, cur.y)) {
-        // left is empty
-        struct keepTrackOfDirectionThing p = {};
-        p.p.x = cur.x - 1;
-        p.p.y = cur.y;
-        p.direction = leftDoor;
-        open[openCount] = p;
-        openCount++;
-      }
-      if (openCount > 0) {
-        point prev = cur;
-        // randomly choose one to try next round
-        struct keepTrackOfDirectionThing temp =
-            open[(rand() + 32768) % openCount];
-        cur = temp.p;
-
-        setMazeCell(&m, prev.x, prev.y,
-                    getMazeCell(&m, prev.x, prev.y) | temp.direction);
-        // TODO figure out which direction we came from
-        // which is the above inverted. somehow
-        uint8 from = 0;
-        switch (temp.direction) {
-        case upDoor:
-          from = downDoor;
-          break;
-        case downDoor:
-          from = upDoor;
-          break;
-        case rightDoor:
-          from = leftDoor;
-          break;
-        case leftDoor:
-          from = rightDoor;
-          break;
-        }
-        setMazeCell(&m, cur.x, cur.y, getMazeCell(&m, cur.x, cur.y) | from);
-        pushPoint(&state->pts, cur);
-      } else {
-        cur = popPoint(&state->pts);
-      }
-    }
+    state->Maze = initMaze(&state->arena, 32, 32);
+    mazeImage = drawMaze(state, &state->Maze, &state->arena);
 
     state->isInitialized = true;
+  }
+  if (input->space.endedDown) {
+    state->Maze = initMaze(&state->arena, 32, 32);
+    mazeImage = drawMaze(state, &state->Maze, &state->arena);
   }
   // gmbDrawWeirdTexture(state, fb);
   char t[16];
@@ -122,75 +37,15 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
               (char *)"THIS IS ARBITRARY TEXT PRINTED FROM BITMAP FONT TILES!",
               10, 400);
   // and some floaty moving updatey text
-  // gmbDrawText(state, fb, t, 0, 0);
+  gmbDrawText(state, fb, t, 0, 0);
   // sprintf_s(t, sizeof(t), "%u", state->ticks);
   // gmbDrawText(state, fb, t, state->ticks % (fb->width - 50),
   //             state->ticks % (fb->height - 50));
   // gmbDrawText(state, fb, (char *)"TICKS", state->ticks % (fb->width - 50),
   //             (state->ticks % (fb->height - 50)) + 11);
   // gmbCopyBitmap(state, &state->fontBitmap, fb);
+  gmbCopyBitmap(state, &mazeImage, fb);
   ++state->ticks;
-
-  uint8 upMask[256] = {0};
-  for (int y = 0; y < 14; y++) {
-    for (int x = 2; x < 14; x++) {
-      upMask[(y * 16) + x] = 1;
-    }
-  }
-
-  uint8 dnMask[256] = {0};
-  for (int y = 2; y < 16; y++) {
-    for (int x = 2; x < 14; x++) {
-      dnMask[(y * 16) + x] = 1;
-    }
-  }
-  // done
-
-  uint8 lMask[256] = {0};
-  for (int y = 2; y < 14; y++) {
-    for (int x = 0; x < 14; x++) {
-      lMask[(y * 16) + x] = 1;
-    }
-  }
-
-  uint8 rMask[256] = {0};
-  for (int y = 2; y < 14; y++) {
-    for (int x = 2; x < 16; x++) {
-      rMask[(y * 16) + x] = 1;
-    }
-  }
-
-  // MAZE TEST
-
-  // state->maze[54] |= upDoor;
-  // state->maze[71] |= downDoor;
-  // state->maze[88] |= leftDoor;
-  // state->maze[105] |= rightDoor;
-
-  framebuffer cell = {0};
-  cell.height = 16;
-  cell.width = 16;
-  cell.pixels = (void *)PushBytes(&state->arena, cell.height * cell.width * 4);
-
-  struct maze m = state->Maze;
-
-  for (int y = 0; y < m.height; y++) {
-    for (int x = 0; x < m.width; x++) {
-      // slowly as possible clear to 0 first
-      for (int i = 0; i < 256; i++) {
-        if ((getMazeCell(&m, x, y) & upDoor && upMask[i] == 1) ||
-            (getMazeCell(&m, x, y) & downDoor && dnMask[i] == 1) ||
-            (getMazeCell(&m, x, y) & leftDoor && lMask[i] == 1) ||
-            (getMazeCell(&m, x, y) & rightDoor && rMask[i] == 1)) {
-          *((uint32 *)cell.pixels + i) = 0xFFFFFFFF;
-        } else {
-          *((uint32 *)cell.pixels + i) = 0;
-        }
-      }
-      gmbCopyBitmapOffset(state, &cell, 0, 0, 16, 16, fb, (x * 16) + 100,
-                          (fb->height - (y * 16) + -300), 16, 16);
-    }
-  }
 }
 
 // note(caf): DEBUG ONLY

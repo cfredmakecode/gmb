@@ -3,16 +3,7 @@
 
 #include "gmb_basics.h"
 #include "gmb_maze.h"
-
-typedef struct memory_arena {
-  uint32 size;
-  uint32 *memory;
-  uint32 curOffset;
-} memory_arena;
-
-internal void *PushBytes(memory_arena *arena, int bytes);
-#define PushStruct(arena, type, count) PushBytes(arena, sizeof(type) * (count))
-internal int findLeastBitSet(int haystack);
+#include "gmb_memory.h"
 
 typedef struct gmbmemory {
   void *permanent;
@@ -136,7 +127,8 @@ typedef struct bitmap {
 #pragma pack(pop)
 
 #define GMBMAINLOOP(name)                                                      \
-  void name(gmbstate *state, framebuffer *fb, real32 msElapsedSinceLast)
+  void name(gmbstate *state, framebuffer *fb, inputbuffer *input,              \
+            real32 msElapsedSinceLast)
 typedef GMBMAINLOOP(gmb_main_loop);
 GMBMAINLOOP(gmbMainLoopStub) {}
 
