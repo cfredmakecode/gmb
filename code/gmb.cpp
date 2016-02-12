@@ -21,13 +21,13 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
     // gmbInitFontBitmap(state);
 
     // setup our maze once
-    state->Maze = initMaze(&state->arena, 32, 32);
+    state->Maze = initMaze(&state->arena, 128, 16);
     mazeImage = drawMaze(state, &state->Maze, &state->arena);
 
     state->isInitialized = true;
   }
   if (input->space.endedDown) {
-    state->Maze = initMaze(&state->arena, 32, 32);
+    state->Maze = initMaze(&state->arena, 128, 16);
     mazeImage = drawMaze(state, &state->Maze, &state->arena);
   }
   // gmbDrawWeirdTexture(state, fb);
@@ -38,13 +38,15 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
               10, 400);
   // and some floaty moving updatey text
   gmbDrawText(state, fb, t, 0, 0);
-  // sprintf_s(t, sizeof(t), "%u", state->ticks);
-  // gmbDrawText(state, fb, t, state->ticks % (fb->width - 50),
-  //             state->ticks % (fb->height - 50));
-  // gmbDrawText(state, fb, (char *)"TICKS", state->ticks % (fb->width - 50),
-  //             (state->ticks % (fb->height - 50)) + 11);
-  // gmbCopyBitmap(state, &state->fontBitmap, fb);
-  gmbCopyBitmap(state, &mazeImage, fb);
+  sprintf_s(t, sizeof(t), "%u", state->ticks);
+  gmbDrawText(state, fb, t, state->ticks % (fb->width - 50),
+              state->ticks % (fb->height - 50));
+  gmbDrawText(state, fb, (char *)"TICKS", state->ticks % (fb->width - 50),
+              (state->ticks % (fb->height - 50)) + 11);
+  gmbCopyBitmap(state, &state->fontBitmap, fb);
+  // gmbCopyBitmap(state, &mazeImage, fb);
+  gmbCopyBitmapOffset(state, &mazeImage, 0, 0, mazeImage.width,
+                      mazeImage.height, fb, -50, -50);
   ++state->ticks;
 }
 
@@ -125,7 +127,7 @@ internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
         gmbCopyBitmapOffset(state, &state->fontBitmap,
                             (j % atlasWidth) * charWidth,
                             (j / atlasWidth) * charHeight, 8, 11, dest,
-                            currentPosX, currentPosY, 8, 11);
+                            currentPosX, currentPosY);
         currentPosX += charWidth;
         break;
       }
@@ -136,17 +138,40 @@ internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
 // NOTE(caf): does not do any scaling yet
 internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
                                   int sy, int swidth, int sheight,
-                                  framebuffer *dest, int dx, int dy, int dwidth,
-                                  int dheight) {
-  assert(swidth == dwidth);
-  assert(sheight == dheight);
+                                  framebuffer *dest, int dx, int dy) {
+  // assert(swidth == dwidth);
+  // assert(sheight == dheight);
   assert(src->width >= sx + swidth);
   assert(src->height >= sy + sheight);
-  assert(dest->width >= dx + dwidth);
-  assert(dest->height >= dy + dheight);
+  // assert(dest->width >= dx + dwidth);
+  // assert(dest->height >= dy + dheight);
 
-  uint32 *spixel = (uint32 *)src->pixels + (sy * src->width) + sx;
-  uint32 *dpixel = (uint32 *)dest->pixels + (dy * dest->width) + dx;
+  uint32 *spixel; //= (uint32 *)src->pixels + (sy * src->width) + sx;
+  uint32 *dpixel; //= (uint32 *)dest->pixels + (dy * dest->width) + dx;
+
+  // calculate the effective areas of the source we'll iterate over
+  // src's start y would be too low (starting below dest's start y)
+  if (dy < 0) {
+    sy += -dy;
+    dy = 0;
+  }
+  // src's start x would be too far left (starting left dest's start x)
+  if (dx < 0) {
+    sx += -dx;
+    dx = 0;
+  }
+
+  // src would be too tall to fit into dest
+  if (sy + sheight > dy + sheight) {
+    // source image will need less rows blit to dest
+    sheight = ((dy + sheight) - sy);
+  }
+
+  if (sx + swidth > dx + swidth) {
+    // source image will need less cols blit to dest
+    swidth = ((dx + swidth) - sx);
+  }
+
   for (int y = 0; y < sheight; ++y) {
     for (int x = 0; x < swidth; ++x) {
       // uint32 r1 = sy * src->width;
@@ -155,6 +180,7 @@ internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
       // uint32 r4 = r1 + r2 + r3;
       spixel =
           (uint32 *)src->pixels + (sy * src->width) + sx + (y * src->width) + x;
+
       // uint32 h2 = dy * dest->width;
       // uint32 h3 = dx + x;
       // uint32 h4 = y * dest->width;
@@ -194,7 +220,7 @@ internal void gmbDrawWeirdTexture(gmbstate *state, framebuffer *fb) {
   }
 }
 
-int findLeastBitSet(int haystack) {
+internal inline int findLeastBitSet(int haystack) {
   for (int ioff = 0; ioff < 32; ioff++) {
     if (haystack & 1 << ioff) {
       return ioff;

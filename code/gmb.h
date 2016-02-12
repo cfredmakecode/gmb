@@ -141,8 +141,7 @@ internal framebuffer *gmbLoadBitmap(gmbstate *state, memory_arena *arena,
                                     char *filename);
 internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
                                   int sy, int swidth, int sheight,
-                                  framebuffer *dest, int dx, int dy, int dwidth,
-                                  int dheight);
+                                  framebuffer *dest, int dx, int dy);
 internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
                           int y);
 

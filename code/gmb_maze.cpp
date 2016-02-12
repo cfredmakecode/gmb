@@ -71,7 +71,7 @@ internal framebuffer drawMaze(gmbstate *state, struct maze *m,
         }
       }
       gmbCopyBitmapOffset(state, &cell, 0, 0, 16, 16, &fb, (x * 16),
-                          (fb.height - 16) - (y * 16), 16, 16);
+                          (fb.height - 16) - (y * 16));
     }
   }
   return fb;
