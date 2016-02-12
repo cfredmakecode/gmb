@@ -1,11 +1,13 @@
 #include "gmb.h"
 #include "gmb_maze.cpp"
+#include "gmb_vec.h"
 
 #include "stdio.h"
 #include "stdlib.h"
 #include "string.h"
 
 global framebuffer mazeImage;
+global vec2 position;
 
 extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
   // note(caf): we rely on the fact that we expect pre-zeroed memory buffers
@@ -21,32 +23,56 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
     // gmbInitFontBitmap(state);
 
     // setup our maze once
-    state->Maze = initMaze(&state->arena, 128, 16);
-    mazeImage = drawMaze(state, &state->Maze, &state->arena);
+    state->Maze = initMaze(&state->arena, 128, 128);
+    mazeImage = renderMaze(state, &state->Maze, &state->arena);
 
+    position.x = 0.0f;
+    position.y = 0.0f;
     state->isInitialized = true;
   }
   if (input->space.endedDown) {
-    state->Maze = initMaze(&state->arena, 128, 16);
-    mazeImage = drawMaze(state, &state->Maze, &state->arena);
+    state->Maze = initMaze(&state->arena, 128, 128);
+    mazeImage = renderMaze(state, &state->Maze, &state->arena);
+  }
+  if (input->down.endedDown) {
+    position.y += 10.0f;
+  }
+  if (input->up.endedDown) {
+    position.y += -10.0f;
+  }
+  if (input->left.endedDown) {
+    position.x += -10.0f;
+  }
+  if (input->right.endedDown) {
+    position.x += 10.0f;
   }
   // gmbDrawWeirdTexture(state, fb);
+  gmbCopyBitmapOffset(state, &mazeImage, 0, 0, mazeImage.width,
+                      mazeImage.height, fb, -50, -50);
+
+  // TODO(CAF): i fucked up something to do with copying pixels to the first
+  // 200ish? cols of the framebuffer
+
   char t[16];
-  sprintf_s(t, sizeof(t), "%2.1f MS", msElapsedSinceLast);
+
+  // TODO(CAF): crash if src x or y is > src width/height
+  gmbCopyBitmapOffset(state, &state->fontBitmap, 0, 0, state->fontBitmap.width,
+                      state->fontBitmap.height, fb, (int)position.x,
+                      (int)position.y);
   gmbDrawText(state, fb,
               (char *)"THIS IS ARBITRARY TEXT PRINTED FROM BITMAP FONT TILES!",
-              10, 400);
+              100, 400);
   // and some floaty moving updatey text
-  gmbDrawText(state, fb, t, 0, 0);
   sprintf_s(t, sizeof(t), "%u", state->ticks);
   gmbDrawText(state, fb, t, state->ticks % (fb->width - 50),
               state->ticks % (fb->height - 50));
   gmbDrawText(state, fb, (char *)"TICKS", state->ticks % (fb->width - 50),
               (state->ticks % (fb->height - 50)) + 11);
-  gmbCopyBitmap(state, &state->fontBitmap, fb);
+  // gmbCopyBitmap(state, &state->fontBitmap, fb);
   // gmbCopyBitmap(state, &mazeImage, fb);
-  gmbCopyBitmapOffset(state, &mazeImage, 0, 0, mazeImage.width,
-                      mazeImage.height, fb, -50, -50);
+
+  sprintf_s(t, sizeof(t), "%2.1f MS", msElapsedSinceLast);
+  gmbDrawText(state, fb, t, 0, 0);
   ++state->ticks;
 }
 
@@ -141,8 +167,8 @@ internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
                                   framebuffer *dest, int dx, int dy) {
   // assert(swidth == dwidth);
   // assert(sheight == dheight);
-  assert(src->width >= sx + swidth);
-  assert(src->height >= sy + sheight);
+  // assert(src->width >= sx + swidth);
+  // assert(src->height >= sy + sheight);
   // assert(dest->width >= dx + dwidth);
   // assert(dest->height >= dy + dheight);
 

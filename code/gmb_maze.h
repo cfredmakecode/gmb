@@ -12,7 +12,7 @@
 
 // when building a maze we need a place to keep our in-progress worked block
 // positions
-#define MAXWORKINGPOINTS 1024
+#define MAXWORKINGPOINTS 128 * 128
 
 struct point {
   int x, y;

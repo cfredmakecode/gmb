@@ -70,6 +70,10 @@ typedef struct inputbuffer {
   gmbkey space;
 
   gmbkey keys[0xFF];
+  gmbkey up;
+  gmbkey down;
+  gmbkey left;
+  gmbkey right;
 } inputbuffer;
 
 #define GMBPLATFORMREADENTIREFILE(name) void *name(char *filename)

@@ -3,13 +3,13 @@
 #include "stdlib.h"
 #include "time.h"
 
-internal framebuffer drawMaze(gmbstate *state, struct maze *m,
-                              memory_arena *arena);
+internal framebuffer renderMaze(gmbstate *state, struct maze *m,
+                                memory_arena *arena);
 
 // TODO(caf): remove the requirement for *state, can't remember why it was
 // initially added anyway
-internal framebuffer drawMaze(gmbstate *state, struct maze *m,
-                              memory_arena *arena) {
+internal framebuffer renderMaze(gmbstate *state, struct maze *m,
+                                memory_arena *arena) {
   // note(caf): this is naively just setting up what a maze cell
   // traversable from whichever direction will look like. multiple can/will
   // be OR'd together

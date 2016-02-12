@@ -131,8 +131,24 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
         running = false;
       }
       if (msg.message == WM_KEYDOWN) {
-        if (msg.wParam == VK_SPACE) {
+        switch (msg.wParam) {
+        case VK_SPACE:
           ib.space.endedDown = true;
+          break;
+        case VK_DOWN:
+          ib.down.endedDown = true;
+          break;
+        case VK_UP:
+          ib.up.endedDown = true;
+          break;
+        case VK_LEFT:
+          ib.left.endedDown = true;
+          break;
+        case VK_RIGHT:
+          ib.right.endedDown = true;
+          break;
+        default:
+          break;
         }
       }
       TranslateMessage(&msg);
