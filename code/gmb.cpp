@@ -46,17 +46,15 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
     position.x += 10.0f;
   }
   // gmbDrawWeirdTexture(state, fb);
-  // gmbCopyBitmapOffset(state, &mazeImage, 0, 0, mazeImage.width,
-  //                     mazeImage.height, fb, -50, -50);
+  gmbCopyBitmapOffset(state, &mazeImage, 0, 0, mazeImage.width,
+                      mazeImage.height, fb, (int)position.x, (int)position.y);
 
   char t[16];
 
   gmbCopyBitmapOffset(state, &state->fontBitmap, 0, 0, state->fontBitmap.width,
                       state->fontBitmap.height, fb, (int)position.x,
                       (int)position.y);
-  gmbDrawText(state, fb,
-              (char *)"THIS IS ARBITRARY TEXT PRINTED FROM BITMAP FONT TILES!",
-              input->mousex, input->mousey);
+  gmbDrawText(state, fb, (char *)"LOL CURSOR", input->mousex, input->mousey);
   // and some floaty moving updatey text
   sprintf_s(t, sizeof(t), "%u", state->ticks);
   gmbDrawText(state, fb, t, state->ticks % (fb->width - 50),
