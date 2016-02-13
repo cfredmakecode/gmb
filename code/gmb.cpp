@@ -20,14 +20,13 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
     state->ticks = 0;
     state->fontBitmap =
         *gmbLoadBitmap(state, &state->arena, (char *)"W:\\gmb\\data\\font.bmp");
-    // gmbInitFontBitmap(state);
 
     // setup our maze once
     state->Maze = initMaze(&state->arena, 128, 128);
     mazeImage = renderMaze(state, &state->Maze, &state->arena);
 
-    position.x = 0.0f;
-    position.y = 0.0f;
+    position.x = 200.0f;
+    position.y = -10.0f;
     state->isInitialized = true;
   }
   if (input->space.endedDown) {
@@ -47,28 +46,24 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
     position.x += 10.0f;
   }
   // gmbDrawWeirdTexture(state, fb);
-  gmbCopyBitmapOffset(state, &mazeImage, 0, 0, mazeImage.width,
-                      mazeImage.height, fb, -50, -50);
-
-  // TODO(CAF): i fucked up something to do with copying pixels to the first
-  // 200ish? cols of the framebuffer
+  // gmbCopyBitmapOffset(state, &mazeImage, 0, 0, mazeImage.width,
+  //                     mazeImage.height, fb, -50, -50);
 
   char t[16];
 
-  // TODO(CAF): crash if src x or y is > src width/height
   gmbCopyBitmapOffset(state, &state->fontBitmap, 0, 0, state->fontBitmap.width,
                       state->fontBitmap.height, fb, (int)position.x,
                       (int)position.y);
   gmbDrawText(state, fb,
               (char *)"THIS IS ARBITRARY TEXT PRINTED FROM BITMAP FONT TILES!",
-              100, 400);
+              input->mousex, input->mousey);
   // and some floaty moving updatey text
   sprintf_s(t, sizeof(t), "%u", state->ticks);
   gmbDrawText(state, fb, t, state->ticks % (fb->width - 50),
               state->ticks % (fb->height - 50));
   gmbDrawText(state, fb, (char *)"TICKS", state->ticks % (fb->width - 50),
               (state->ticks % (fb->height - 50)) + 11);
-  // gmbCopyBitmap(state, &state->fontBitmap, fb);
+
   // gmbCopyBitmap(state, &mazeImage, fb);
 
   sprintf_s(t, sizeof(t), "%2.1f MS", msElapsedSinceLast);
@@ -132,6 +127,7 @@ internal framebuffer *gmbLoadBitmap(gmbstate *state, memory_arena *arena,
 // note(caf): x,y is top left corner of where to start text
 internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
                           int y) {
+  assert(text);
   char *characters =
       (char
            *)"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:;.,()!?=-+%*/{}<>'\"`_^\\| ";
@@ -141,7 +137,6 @@ internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
   // calc the size of our texture atlas. todo(caf): setup asset management
   int atlasWidth = state->fontBitmap.width / charWidth;
   // int atlasHeight = state->fontBitmap.height / charHeight;
-  assert(text);
   uint32 currentPosX = x;
   uint32 currentPosY = y;
   // size_t len = strlen(text);
@@ -179,38 +174,51 @@ internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
   // src's start y would be too low (starting below dest's start y)
   if (dy < 0) {
     sy += -dy;
+    sheight += dy;
+    // are we starting so far down that there isn't anything to bother trying to
+    // copy from the source?
+    if (sy > src->height - 1) {
+      return;
+    }
     dy = 0;
   }
+
+  // src's start y would be too high
+  if (dy > dest->height - 1) {
+    return;
+  }
+
+  // dest would be too short to fit src
+  if (sheight > dest->height - dy) {
+    sheight = (dest->height - dy);
+  }
+
   // src's start x would be too far left (starting left dest's start x)
   if (dx < 0) {
     sx += -dx;
+    swidth += dx;
+    // are we starting so far right that there isn't anything to bother trying
+    // to copy from the source?
+    if (sx > src->width - 1) {
+      return;
+    }
     dx = 0;
   }
 
-  // src would be too tall to fit into dest
-  if (sy + sheight > dy + sheight) {
-    // source image will need less rows blit to dest
-    sheight = ((dy + sheight) - sy);
+  // src's start x would be too right
+  if (dx > dest->width - 1) {
+    return;
   }
 
-  if (sx + swidth > dx + swidth) {
-    // source image will need less cols blit to dest
-    swidth = ((dx + swidth) - sx);
+  // dest would be too narrow to fit src
+  if (swidth > dest->width - dx) {
+    swidth = (dest->width - dx);
   }
 
   for (int y = 0; y < sheight; ++y) {
     for (int x = 0; x < swidth; ++x) {
-      // uint32 r1 = sy * src->width;
-      // uint32 r2 = sx + x;
-      // uint32 r3 = y * src->width;
-      // uint32 r4 = r1 + r2 + r3;
       spixel =
           (uint32 *)src->pixels + (sy * src->width) + sx + (y * src->width) + x;
-
-      // uint32 h2 = dy * dest->width;
-      // uint32 h3 = dx + x;
-      // uint32 h4 = y * dest->width;
-      // uint32 h5 = blah2 + blah3 + blah4;
       dpixel = (uint32 *)dest->pixels + (dy * dest->width) + dx +
                (y * dest->width) + x;
       *dpixel = *spixel;
@@ -218,6 +226,7 @@ internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
   }
 }
 
+#if 0
 // note(caf): needs to have a way to choose areas to copy to/from, needs to
 // handle clipping,
 internal void gmbCopyBitmap(gmbstate *state, framebuffer *source,
@@ -234,6 +243,7 @@ internal void gmbCopyBitmap(gmbstate *state, framebuffer *source,
     }
   }
 }
+#endif
 
 internal void gmbDrawWeirdTexture(gmbstate *state, framebuffer *fb) {
   uint32 *pixel = (uint32 *)fb->pixels;

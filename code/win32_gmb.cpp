@@ -76,6 +76,7 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
   tclass.lpfnWndProc = &gmbWindowProc;
   tclass.hInstance = 0;
   tclass.lpszClassName = "gmb_class_lol";
+  tclass.hCursor = LoadCursorA(0, IDC_ARROW);
 
   ATOM windowClass = RegisterClassA(&tclass);
   if (windowClass == 0) {
@@ -121,6 +122,7 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
   LARGE_INTEGER freq;
   QueryPerformanceFrequency(&freq);
   uint64 elapsed = curpf.QuadPart - lastpf.QuadPart;
+  POINT p;
   real32 ms = 0;
   framebuffer fb = {0};
   inputbuffer ib = {0};
@@ -158,6 +160,10 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
     fb.width = screenBuffer.width;
     fb.stride = 4;
     fb.pixels = screenBuffer.buf;
+    GetCursorPos(&p);
+    ScreenToClient(window, &p); // takes care of window/cursor offsets
+    ib.mousex = p.x;
+    ib.mousey = p.y;
     QueryPerformanceCounter(&curpf);
     elapsed = curpf.QuadPart - lastpf.QuadPart;
     lastpf = curpf;

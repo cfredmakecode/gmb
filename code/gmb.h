@@ -39,6 +39,8 @@ typedef struct gmbkey {
 // correct position
 // as they would be in ASCII. so starting at 0x41 (65);
 typedef struct inputbuffer {
+  int mousex;
+  int mousey;
   uint32 kbutton;
 
   gmbkey mouse1;
