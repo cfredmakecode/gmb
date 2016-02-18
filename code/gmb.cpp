@@ -19,16 +19,19 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
         *gmbLoadBitmap(state, &state->arena, (char *)"W:\\gmb\\data\\font.bmp");
 
     // setup our maze once
-    state->Maze = initMaze(&state->arena, 4, 4);
-    state->MazeImage = renderMaze(state, &state->Maze, &state->arena);
+    state->Maze = initMaze(&state->arena, 14, 7);
+    renderMaze(&state->Maze, &state->arena);
 
-    state->position.x = 200.0f;
-    state->position.y = -10.0f;
+    state->position.x = 20.0f;
+    state->position.y = 30.0f;
     state->isInitialized = true;
   }
   if (input->space.endedDown) {
-    state->Maze = initMaze(&state->arena, 4, 4);
-    state->MazeImage = renderMaze(state, &state->Maze, &state->arena);
+    state->Maze = initMaze(&state->arena, 14, 7);
+    renderMaze(&state->Maze, &state->arena);
+  }
+  if (input->enter.endedDown) {
+    renderMaze(&state->Maze, &state->arena);
   }
   if (input->down.endedDown) {
     state->position.y += 10.0f;
@@ -43,8 +46,8 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
     state->position.x += 10.0f;
   }
   gmbDrawWeirdTexture(state, fb);
-  gmbCopyBitmapOffset(state, &state->MazeImage, 0, 0, state->MazeImage.width,
-                      state->MazeImage.height, fb, (int)state->position.x,
+  gmbCopyBitmapOffset(state->Maze.image, 0, 0, state->Maze.image->width,
+                      state->Maze.image->height, fb, (int)state->position.x,
                       (int)state->position.y);
 
   char t[16];
@@ -142,8 +145,7 @@ internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
     // to our bitmap font tiles already setup
     for (int j = 0; j < strlen(characters); j++) {
       if (*i == characters[j]) {
-        gmbCopyBitmapOffset(state, &state->fontBitmap,
-                            (j % atlasWidth) * charWidth,
+        gmbCopyBitmapOffset(&state->fontBitmap, (j % atlasWidth) * charWidth,
                             (j / atlasWidth) * charHeight, 8, 11, dest,
                             currentPosX, currentPosY);
         currentPosX += charWidth;
@@ -154,9 +156,9 @@ internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
 }
 
 // NOTE(caf): does not do any scaling yet
-internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
-                                  int sy, int swidth, int sheight,
-                                  framebuffer *dest, int dx, int dy) {
+internal void gmbCopyBitmapOffset(framebuffer *src, int sx, int sy, int swidth,
+                                  int sheight, framebuffer *dest, int dx,
+                                  int dy) {
   // assert(swidth == dwidth);
   // assert(sheight == dheight);
   // assert(src->width >= sx + swidth);
@@ -246,7 +248,7 @@ internal void gmbDrawWeirdTexture(gmbstate *state, framebuffer *fb) {
   uint32 *pixel = (uint32 *)fb->pixels;
   for (int y = 0; y < fb->height; ++y) {
     for (int x = 0; x < fb->width; ++x) {
-      *pixel = (uint8)(x + y + state->ticks) |
+      *pixel = (uint8)(x - y + state->ticks * 16) |
                (uint8)((x * 2) + state->ticks) << 8 | (uint8)y << 16;
       pixel++;
     }

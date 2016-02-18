@@ -1,7 +1,7 @@
 @echo off
 IF NOT EXIST ..\..\build mkdir ..\..\build
 pushd ..\..\build
-del /Q *.*
+del /Q *.* > NUL 2>&1
 
 REM build main dll
 cl /MT /Gm- /GR- /EHa- /Od /Oi /WX /W4 /wd4100 /wd4211 /wd4505 /DLL /nologo /Z7 /Fagmb.assembly /Fmgmb.map /Fegmb.dll /LD ..\gmb\code\gmb.cpp /link /PDB:gmb%random%.pdb

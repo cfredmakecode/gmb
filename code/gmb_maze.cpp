@@ -1,35 +1,23 @@
-#include "gmb_maze.h"
 #include "gmb.h"
+#include "malloc.h"
 #include "stdlib.h"
 #include "time.h"
 
-internal framebuffer renderMaze(gmbstate *state, struct maze *m,
-                                memory_arena *arena);
-
-// TODO(caf): remove the requirement for *state, can't remember why it was
-// initially added anyway
-internal framebuffer renderMaze(gmbstate *state, struct maze *m,
-                                memory_arena *arena) {
+internal void renderMaze(struct maze *m, memory_arena *arena) {
   // sized in pixels. for the resulting image
   const int pixelsEdgeLength = 64;
-  // they both must be divisible by 4 due to masks
+  const int wallWidth = pixelsEdgeLength / 16;
 
-  // setup the "framebuffer" we're going to return as rendered
-  framebuffer fb = {0};
-  fb.height = m->height * pixelsEdgeLength;
-  fb.width = m->width * pixelsEdgeLength;
+  if (!m->image) {
+    // setup the "framebuffer" we're going to render
+    m->image = (framebuffer *)PushStruct(arena, framebuffer, 1);
+    m->image->height = m->height * pixelsEdgeLength;
+    m->image->width = m->width * pixelsEdgeLength;
 
-  // alloc enough room for each pixel of each cell
-  fb.pixels = (void *)PushBytes(arena, fb.height * fb.width * 4);
-
-  // note(caf): setting up what a maze cell
-  // traversable from a direction will look like. will then
-  // be OR'd together
-
-  const uint8 upMask[16] = {0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0};
-  const uint8 dnMask[16] = {0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0};
-  const uint8 lMask[16] = {0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0};
-  const uint8 rMask[16] = {0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0};
+    // alloc enough room for each pixel of each cell
+    m->image->pixels =
+        (void *)PushBytes(arena, m->image->height * m->image->width * 4);
+  }
 
   // somewhere to temporarily blit pixels of individual maze cells as
   // they're assembled. a better design would be to blit maze cells directly to
@@ -39,76 +27,53 @@ internal framebuffer renderMaze(gmbstate *state, struct maze *m,
   cell.width = pixelsEdgeLength;
   // TODO(caf): allocate this in temporary memory, not the normal
   // permanent arena
-  cell.pixels = (void *)PushBytes(arena, cell.height * cell.width * 4);
-
-  // TODO(caf): unfuck this. re-figure out how to calculate backwards.
-  // forwards seems so easy. wtf self.
-  //    x  x  x  x
-  // y  0  1  2  3
-  // y  4  5  6  7
-  // y  8  9 10 11
-  // y 12 13 14 15
-  //
-  //   x x
-  // y 0 1
-  // y 2 3
-  // y = (mazey / (mazeh/luth))
-  // y = (1 / (2)) = 0
-  // x = (mazex / (mazew/lutw))
-  // x = (0 / (2)) = 0
-  // x = (3 / (2)) = 1
-  //
-  // (0*w),0 = 0,0
-  // (0*w),1 = 0,0
-  // (0*w),2 = 0,1
-  // (0*w),3 = 0,1
-  //
-  // (1*w),0 = 0,0
-  // (1*w),1 = 0,0
-  // (1*w),2 = 0,1
-  // (1*w),3 = 0,1
-  //
-  // (2*w),0 = 1,0
-  // (2*w),1 = 1,0
-  // (2*w),2 = 1,1
-  // (2*w),3 = 1,1
-  //
-  // (3*w),0 = 1,0
-  // (3*w),1 = 1,0
-  // (3*w),2 = 1,1
-  // (3*w),3 = 1,1
+  cell.pixels = alloca(cell.height * cell.width * 4);
 
   for (int mazey = 0; mazey < m->height; mazey++) {
     for (int mazex = 0; mazex < m->width; mazex++) {
       for (int pixelsy = 0; pixelsy < pixelsEdgeLength; pixelsy++) {
         for (int pixelsx = 0; pixelsx < pixelsEdgeLength; pixelsx++) {
-          uint32 toSet = 0;
-          if (getMazeCell(m, mazex, mazey) & upDoor) {
-            if (upMask[((pixelsy / (pixelsEdgeLength / m->height) *
-                         (pixelsEdgeLength / m->width)) +
-                        (pixelsx / (pixelsEdgeLength / m->width)))] == 1) {
-              toSet = 0xFFFFFFFF;
-            }
-          }
+          uint32 toSet = 0x0000000;
           if (getMazeCell(m, mazex, mazey) & downDoor) {
-            if (dnMask[((pixelsy / (pixelsEdgeLength / m->height) *
-                         (pixelsEdgeLength / m->width)) +
-                        (pixelsx / (pixelsEdgeLength / m->width)))] == 1) {
-              toSet = 0xFFFFFFFF;
+            if ((pixelsy >= pixelsEdgeLength - 1 - wallWidth &&
+                 pixelsx >= wallWidth &&
+                 pixelsx <= pixelsEdgeLength - 1 - wallWidth) ||
+                (pixelsx >= wallWidth &&
+                 pixelsx <= pixelsEdgeLength - 1 - wallWidth &&
+                 pixelsy >= wallWidth &&
+                 pixelsy <= pixelsEdgeLength - 1 - wallWidth)) {
+              toSet = 0x00FFFFFF;
             }
           }
-          if (getMazeCell(m, mazex, mazey) & leftDoor) {
-            if (lMask[((pixelsy / (pixelsEdgeLength / m->height) *
-                        (pixelsEdgeLength / m->width)) +
-                       (pixelsx / (pixelsEdgeLength / m->width)))] == 1) {
-              toSet = 0xFFFFFFFF;
+          if (getMazeCell(m, mazex, mazey) & upDoor) {
+            if ((pixelsy <= wallWidth && pixelsx >= wallWidth &&
+                 pixelsx <= pixelsEdgeLength - 1 - wallWidth) ||
+                (pixelsx >= wallWidth &&
+                 pixelsx <= pixelsEdgeLength - 1 - wallWidth &&
+                 pixelsy >= wallWidth &&
+                 pixelsy <= pixelsEdgeLength - 1 - wallWidth)) {
+              toSet = 0x00FFFFFF;
             }
           }
           if (getMazeCell(m, mazex, mazey) & rightDoor) {
-            if (rMask[((pixelsy / (pixelsEdgeLength / m->height) *
-                        (pixelsEdgeLength / m->width)) +
-                       (pixelsx / (pixelsEdgeLength / m->width)))] == 1) {
-              toSet = 0xFFFFFFFF;
+            if ((pixelsx >= pixelsEdgeLength - 1 - wallWidth &&
+                 pixelsy >= wallWidth &&
+                 pixelsy <= pixelsEdgeLength - 1 - wallWidth) ||
+                (pixelsx >= wallWidth &&
+                 pixelsx <= pixelsEdgeLength - 1 - wallWidth &&
+                 pixelsy >= wallWidth &&
+                 pixelsy <= pixelsEdgeLength - 1 - wallWidth)) {
+              toSet = 0x00FFFFFF;
+            }
+          }
+          if (getMazeCell(m, mazex, mazey) & leftDoor) {
+            if ((pixelsx <= wallWidth && pixelsy >= wallWidth &&
+                 pixelsy <= pixelsEdgeLength - 1 - wallWidth) ||
+                (pixelsx >= wallWidth &&
+                 pixelsx <= pixelsEdgeLength - 1 - wallWidth &&
+                 pixelsy >= wallWidth &&
+                 pixelsy <= pixelsEdgeLength - 1 - wallWidth)) {
+              toSet = 0x00FFFFFF;
             }
           }
 
@@ -116,12 +81,12 @@ internal framebuffer renderMaze(gmbstate *state, struct maze *m,
               toSet;
         }
       }
-      gmbCopyBitmapOffset(state, &cell, 0, 0, cell.width, cell.height, &fb,
-                          (mazex * cell.width),
-                          (fb.height - cell.height) - (mazey * cell.height));
+      gmbCopyBitmapOffset(
+          &cell, 0, 0, cell.width, cell.height, m->image, (mazex * cell.width),
+          (m->image->height - cell.height) - (mazey * cell.height));
     }
   }
-  return fb;
+  return;
 }
 
 internal struct maze initMaze(memory_arena *arena, int width, int height) {

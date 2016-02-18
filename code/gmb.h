@@ -2,16 +2,8 @@
 #define GMB_H
 
 #include "gmb_basics.h"
-#include "gmb_maze.h"
 #include "gmb_memory.h"
 #include "gmb_vec.h"
-
-typedef struct gmbmemory {
-  void *permanent;
-  uint32 permanentBytes;
-  void *temporary;
-  uint32 temporaryBytes;
-} gmbmemory;
 
 // assumes 32-bit fb always
 typedef struct framebuffer {
@@ -21,6 +13,51 @@ typedef struct framebuffer {
               // simply (width * 4 bytes)
   void *pixels;
 } framebuffer;
+
+// we need to keep track of which "sides" of a maze's block
+// have been travelled open during the generation process
+enum cellDir {
+  upDoor = 1,
+  downDoor = upDoor << 1,
+  leftDoor = downDoor << 1,
+  rightDoor = leftDoor << 1,
+};
+
+// when building a maze we need a place to keep our in-progress worked block
+// positions
+#define MAXWORKINGPOINTS 128 * 128
+
+struct point {
+  int x, y;
+};
+
+struct pointStack {
+  int cur;
+  struct point *stack;
+  int maxSize;
+};
+
+struct maze {
+  int height;
+  int width;
+  uint8 *cells;
+  framebuffer *image;
+};
+
+internal void pushPoint(struct pointStack *stack, struct point pt);
+internal struct point popPoint(struct pointStack *stack);
+internal bool32 mazeCellIsEmpty(struct maze *m, int x, int y);
+internal uint8 getMazeCell(struct maze *m, int x, int y);
+internal void setMazeCell(struct maze *m, int x, int y, uint8 value);
+internal struct maze initMaze(memory_arena *arena, int width, int height);
+internal void renderMaze(struct maze *m, memory_arena *arena);
+
+typedef struct gmbmemory {
+  void *permanent;
+  uint32 permanentBytes;
+  void *temporary;
+  uint32 temporaryBytes;
+} gmbmemory;
 
 // assume 16-bit depth
 typedef struct soundbuffer {
@@ -94,7 +131,6 @@ typedef struct gmbstate {
   bool32 isInitialized;
   framebuffer fontBitmap;
   struct maze Maze;
-  framebuffer MazeImage;
   vec2 position;
   struct pointStack pts;
   // some function pointers callable into the platform layer
@@ -148,9 +184,9 @@ internal void gmbCopyBitmap(gmbstate *state, framebuffer *source,
                             framebuffer *dest);
 internal framebuffer *gmbLoadBitmap(gmbstate *state, memory_arena *arena,
                                     char *filename);
-internal void gmbCopyBitmapOffset(gmbstate *state, framebuffer *src, int sx,
-                                  int sy, int swidth, int sheight,
-                                  framebuffer *dest, int dx, int dy);
+internal void gmbCopyBitmapOffset(framebuffer *src, int sx, int sy, int swidth,
+                                  int sheight, framebuffer *dest, int dx,
+                                  int dy);
 internal void gmbDrawText(gmbstate *state, framebuffer *dest, char *text, int x,
                           int y);
 

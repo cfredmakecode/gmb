@@ -108,7 +108,7 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
   }
   HWND window = CreateWindow("gmb_class_lol", "gmb window",
                              WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT,
-                             CW_USEDEFAULT, 800, 600, 0, 0, instance, 0);
+                             CW_USEDEFAULT, 960, 540, 0, 0, instance, 0);
   if (window == 0) {
     errord((char *)"CreateWindow");
   }
@@ -187,6 +187,9 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
       }
       if (msg.message == WM_KEYDOWN) {
         switch (msg.wParam) {
+        case VK_RETURN:
+          ib.enter.endedDown = true;
+          break;
         case VK_SPACE:
           ib.space.endedDown = true;
           break;
@@ -314,7 +317,16 @@ LRESULT CALLBACK gmbWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam,
     }
   case WM_SIZE: {
     WIN32WINDOWSIZE size = Win32GetWindowSize(hwnd);
+    if (size.height > 540) {
+      size.height = 540;
+    }
+    if (size.width > 960) {
+      size.width = 960;
+    }
     Win32ResizeWindow(&screenBuffer, size.height, size.width);
+    RECT r;
+    GetWindowRect(hwnd, &r);
+    SetWindowPos(hwnd, 0, r.left, r.top, size.width, size.height, 0);
     break;
   }
   default:
