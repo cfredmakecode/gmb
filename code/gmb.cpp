@@ -22,7 +22,7 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
         *gmbLoadBitmap(state, &state->arena, (char *)"W:\\gmb\\data\\font.bmp");
 
     // setup our maze once
-    state->Maze = initMaze(&state->arena, 128, 128);
+    state->Maze = initMaze(&state->arena, 4, 4);
     mazeImage = renderMaze(state, &state->Maze, &state->arena);
 
     position.x = 200.0f;
@@ -30,7 +30,7 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
     state->isInitialized = true;
   }
   if (input->space.endedDown) {
-    state->Maze = initMaze(&state->arena, 128, 128);
+    state->Maze = initMaze(&state->arena, 4, 4);
     mazeImage = renderMaze(state, &state->Maze, &state->arena);
   }
   if (input->down.endedDown) {
@@ -45,15 +45,16 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
   if (input->right.endedDown) {
     position.x += 10.0f;
   }
-  // gmbDrawWeirdTexture(state, fb);
+  gmbDrawWeirdTexture(state, fb);
   gmbCopyBitmapOffset(state, &mazeImage, 0, 0, mazeImage.width,
                       mazeImage.height, fb, (int)position.x, (int)position.y);
 
   char t[16];
 
-  gmbCopyBitmapOffset(state, &state->fontBitmap, 0, 0, state->fontBitmap.width,
-                      state->fontBitmap.height, fb, (int)position.x,
-                      (int)position.y);
+  // gmbCopyBitmapOffset(state, &state->fontBitmap, 0, 0,
+  // state->fontBitmap.width,
+  //                     state->fontBitmap.height, fb, (int)position.x,
+  //                     (int)position.y);
   gmbDrawText(state, fb, (char *)"LOL CURSOR", input->mousex, input->mousey);
   // and some floaty moving updatey text
   sprintf_s(t, sizeof(t), "%u", state->ticks);

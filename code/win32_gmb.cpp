@@ -47,30 +47,41 @@ typedef struct win32_gmbdll {
   HMODULE Handle;
 } win32_gmbdll;
 
-internal win32_gmbdll win32_InitGmbDll() {
-  win32_gmbdll gmbDLL = {0};
-  gmbDLL.Handle = LoadLibraryA("gmb.dll");
-  if (!gmbDLL.Handle) {
-    gmbDLL.gmbMainLoop = &gmbMainLoopStub;
+internal void win32_InitGmbDll(win32_gmbdll *dll) {
+  // note(caf): we make a copy because otherwise visual studio's debugger holds
+  // the dll open and we can't compile a new one over it
+  if (!CopyFileA("\\build\\gmb.dll", "\\build\\gmb_copy.dll", 0)) {
+    // todo(caf): handle errors
+    return;
+  }
+  dll->Handle = LoadLibraryA("\\build\\gmb_copy.dll");
+  if (!dll->Handle) {
+    dll->gmbMainLoop = &gmbMainLoopStub;
     errord((char *)"Failed to LoadLibraryA()");
   } else {
     gmb_main_loop *ml =
-        (gmb_main_loop *)GetProcAddress(gmbDLL.Handle, "gmbMainLoop");
+        (gmb_main_loop *)GetProcAddress(dll->Handle, "gmbMainLoop");
     if (!ml) {
-      gmbDLL.gmbMainLoop = &gmbMainLoopStub;
+      dll->gmbMainLoop = &gmbMainLoopStub;
       errord((char *)"Failed to GetProcAddress()");
     }
-    gmbDLL.gmbMainLoop = ml;
+    dll->gmbMainLoop = ml;
   }
-  return gmbDLL;
 }
+
+internal void win32_UnloadGmbDll(win32_gmbdll *dll) {
+  assert(dll->Handle);
+  FreeLibrary(dll->Handle);
+}
+
 internal const int bitDepth = 32;
 internal const real32 targetMS = real32(1000.0 / 60.0);
 global bool32 running = true;
 global WIN32SCREENBUFFER screenBuffer = {0};
 int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
             int cmdshow) {
-  win32_gmbdll gmbDLL = win32_InitGmbDll();
+  win32_gmbdll gmbDLL;
+  win32_InitGmbDll(&gmbDLL);
   WNDCLASS tclass = {0};
   tclass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
   tclass.lpfnWndProc = &gmbWindowProc;
@@ -91,6 +102,8 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
   WIN32WINDOWSIZE size = Win32GetWindowSize(window);
   Win32ResizeWindow(&screenBuffer, size.height, size.width);
 
+// note(caf): use a specific starting address range so we can do some fancy
+// stuff in debug mode
 #ifdef WIN32_GMB_INTERNAL
   LPVOID StartAddress = (LPVOID)Tibibytes(2);
 #else
@@ -126,7 +139,22 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
   real32 ms = 0;
   framebuffer fb = {0};
   inputbuffer ib = {0};
+
+  // note(caf): to watch for live reloading our main dll
+  uint64 t = GetTickCount64();
   while (running) {
+    if (GetTickCount64() - 1000 > t) {
+      t = GetTickCount64();
+      DWORD att;
+      att = GetFileAttributesA("\\build\\gmb.dll");
+      if (att != INVALID_FILE_ATTRIBUTES) {
+        // it existed, so unload our current copy and load the new one
+        win32_UnloadGmbDll(&gmbDLL);
+        win32_InitGmbDll(&gmbDLL);
+        // TODO(caf): use a lockfile to avoid the race condition of compiler
+        // creating file but buffer not flushed when we try to load it
+      }
+    }
     QueryPerformanceCounter(&startFrame);
     while (PeekMessageA(&msg, window, 0, 0, PM_REMOVE)) {
       if (msg.message == WM_QUIT || msg.message == WM_CLOSE) {
@@ -188,6 +216,7 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
     ib = {0};
     // Win32DebugDrawFrameTime(hdc, ms, win32ticks);
   }
+  win32_UnloadGmbDll(&gmbDLL);
   return 0;
 }
 

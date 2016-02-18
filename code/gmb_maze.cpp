@@ -10,68 +10,115 @@ internal framebuffer renderMaze(gmbstate *state, struct maze *m,
 // initially added anyway
 internal framebuffer renderMaze(gmbstate *state, struct maze *m,
                                 memory_arena *arena) {
-  // note(caf): this is naively just setting up what a maze cell
-  // traversable from whichever direction will look like. multiple can/will
-  // be OR'd together
-  uint8 upMask[256] = {0};
-  for (int y = 0; y < 14; y++) {
-    for (int x = 2; x < 14; x++) {
-      upMask[(y * 16) + x] = 1;
-    }
-  }
-
-  uint8 dnMask[256] = {0};
-  for (int y = 2; y < 16; y++) {
-    for (int x = 2; x < 14; x++) {
-      dnMask[(y * 16) + x] = 1;
-    }
-  }
-
-  uint8 lMask[256] = {0};
-  for (int y = 2; y < 14; y++) {
-    for (int x = 0; x < 14; x++) {
-      lMask[(y * 16) + x] = 1;
-    }
-  }
-
-  uint8 rMask[256] = {0};
-  for (int y = 2; y < 14; y++) {
-    for (int x = 2; x < 16; x++) {
-      rMask[(y * 16) + x] = 1;
-    }
-  }
-
-  // setup somewhere to temporarily blit pixels of individual maze cells
-  // better design would be to blit maze cells directly to the target obviously
-  framebuffer cell = {0};
-  cell.height = 16; // these are both sized in pixels, for the created image
-  cell.width = 16;
-  // TODO(caf): should allocate this in temporary memory, not the normal
-  // permanent arena
-  cell.pixels = (void *)PushBytes(arena, cell.height * cell.width * 4);
+  // sized in pixels. for the resulting image
+  const int pixelsEdgeLength = 64;
+  // they both must be divisible by 4 due to masks
 
   // setup the "framebuffer" we're going to return as rendered
   framebuffer fb = {0};
-  fb.height = m->height * cell.height;
-  fb.width = m->width * cell.width;
+  fb.height = m->height * pixelsEdgeLength;
+  fb.width = m->width * pixelsEdgeLength;
+
   // alloc enough room for each pixel of each cell
   fb.pixels = (void *)PushBytes(arena, fb.height * fb.width * 4);
 
-  for (int y = 0; y < m->height; y++) {
-    for (int x = 0; x < m->width; x++) {
-      // slowly as possible clear to 0 first
-      for (int i = 0; i < 256; i++) {
-        if ((getMazeCell(m, x, y) & upDoor && upMask[i] == 1) ||
-            (getMazeCell(m, x, y) & downDoor && dnMask[i] == 1) ||
-            (getMazeCell(m, x, y) & leftDoor && lMask[i] == 1) ||
-            (getMazeCell(m, x, y) & rightDoor && rMask[i] == 1)) {
-          *((uint32 *)cell.pixels + i) = 0xFFFFFFFF;
-        } else {
-          *((uint32 *)cell.pixels + i) = 0;
+  // note(caf): setting up what a maze cell
+  // traversable from a direction will look like. will then
+  // be OR'd together
+
+  const uint8 upMask[16] = {0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0};
+  const uint8 dnMask[16] = {0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 1, 0};
+  const uint8 lMask[16] = {0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0, 0};
+  const uint8 rMask[16] = {0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 0};
+
+  // somewhere to temporarily blit pixels of individual maze cells as
+  // they're assembled. a better design would be to blit maze cells directly to
+  // the target
+  framebuffer cell = {0};
+  cell.height = pixelsEdgeLength;
+  cell.width = pixelsEdgeLength;
+  // TODO(caf): allocate this in temporary memory, not the normal
+  // permanent arena
+  cell.pixels = (void *)PushBytes(arena, cell.height * cell.width * 4);
+
+  // TODO(caf): unfuck this. re-figure out how to calculate backwards.
+  // forwards seems so easy. wtf self.
+  //    x  x  x  x
+  // y  0  1  2  3
+  // y  4  5  6  7
+  // y  8  9 10 11
+  // y 12 13 14 15
+  //
+  //   x x
+  // y 0 1
+  // y 2 3
+  // y = (mazey / (mazeh/luth))
+  // y = (1 / (2)) = 0
+  // x = (mazex / (mazew/lutw))
+  // x = (0 / (2)) = 0
+  // x = (3 / (2)) = 1
+  //
+  // (0*w),0 = 0,0
+  // (0*w),1 = 0,0
+  // (0*w),2 = 0,1
+  // (0*w),3 = 0,1
+  //
+  // (1*w),0 = 0,0
+  // (1*w),1 = 0,0
+  // (1*w),2 = 0,1
+  // (1*w),3 = 0,1
+  //
+  // (2*w),0 = 1,0
+  // (2*w),1 = 1,0
+  // (2*w),2 = 1,1
+  // (2*w),3 = 1,1
+  //
+  // (3*w),0 = 1,0
+  // (3*w),1 = 1,0
+  // (3*w),2 = 1,1
+  // (3*w),3 = 1,1
+
+  for (int mazey = 0; mazey < m->height; mazey++) {
+    for (int mazex = 0; mazex < m->width; mazex++) {
+      for (int pixelsy = 0; pixelsy < pixelsEdgeLength; pixelsy++) {
+        for (int pixelsx = 0; pixelsx < pixelsEdgeLength; pixelsx++) {
+          uint32 toSet = 0;
+          if (getMazeCell(m, mazex, mazey) & upDoor) {
+            if (upMask[((pixelsy / (pixelsEdgeLength / m->height) *
+                         (pixelsEdgeLength / m->width)) +
+                        (pixelsx / (pixelsEdgeLength / m->width)))] == 1) {
+              toSet = 0xFFFFFFFF;
+            }
+          }
+          if (getMazeCell(m, mazex, mazey) & downDoor) {
+            if (dnMask[((pixelsy / (pixelsEdgeLength / m->height) *
+                         (pixelsEdgeLength / m->width)) +
+                        (pixelsx / (pixelsEdgeLength / m->width)))] == 1) {
+              toSet = 0xFFFFFFFF;
+            }
+          }
+          if (getMazeCell(m, mazex, mazey) & leftDoor) {
+            if (lMask[((pixelsy / (pixelsEdgeLength / m->height) *
+                        (pixelsEdgeLength / m->width)) +
+                       (pixelsx / (pixelsEdgeLength / m->width)))] == 1) {
+              toSet = 0xFFFFFFFF;
+            }
+          }
+          if (getMazeCell(m, mazex, mazey) & rightDoor) {
+            if (rMask[((pixelsy / (pixelsEdgeLength / m->height) *
+                        (pixelsEdgeLength / m->width)) +
+                       (pixelsx / (pixelsEdgeLength / m->width)))] == 1) {
+              toSet = 0xFFFFFFFF;
+            }
+          }
+
+          *((uint32 *)cell.pixels + (pixelsy * pixelsEdgeLength) + pixelsx) =
+              toSet;
         }
       }
-      gmbCopyBitmapOffset(state, &cell, 0, 0, 16, 16, &fb, (x * 16),
-                          (fb.height - 16) - (y * 16));
+      gmbCopyBitmapOffset(state, &cell, 0, 0, cell.width, cell.height, &fb,
+                          (mazex * cell.width),
+                          (fb.height - cell.height) - (mazey * cell.height));
     }
   }
   return fb;
