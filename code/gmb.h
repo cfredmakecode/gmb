@@ -4,6 +4,7 @@
 #include "gmb_basics.h"
 #include "gmb_maze.h"
 #include "gmb_memory.h"
+#include "gmb_vec.h"
 
 typedef struct gmbmemory {
   void *permanent;
@@ -93,6 +94,8 @@ typedef struct gmbstate {
   bool32 isInitialized;
   framebuffer fontBitmap;
   struct maze Maze;
+  framebuffer MazeImage;
+  vec2 position;
   struct pointStack pts;
   // some function pointers callable into the platform layer
   gmb_platform_read_entire_file *DEBUGPlatformReadEntireFile;

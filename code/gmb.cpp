@@ -6,9 +6,6 @@
 #include "stdlib.h"
 #include "string.h"
 
-global framebuffer mazeImage;
-global vec2 position;
-
 extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
   // note(caf): we rely on the fact that we expect pre-zeroed memory buffers
   // from the platform layer quite a bit. for example, right here.
@@ -23,45 +20,46 @@ extern "C" __declspec(dllexport) GMBMAINLOOP(gmbMainLoop) {
 
     // setup our maze once
     state->Maze = initMaze(&state->arena, 4, 4);
-    mazeImage = renderMaze(state, &state->Maze, &state->arena);
+    state->MazeImage = renderMaze(state, &state->Maze, &state->arena);
 
-    position.x = 200.0f;
-    position.y = -10.0f;
+    state->position.x = 200.0f;
+    state->position.y = -10.0f;
     state->isInitialized = true;
   }
   if (input->space.endedDown) {
     state->Maze = initMaze(&state->arena, 4, 4);
-    mazeImage = renderMaze(state, &state->Maze, &state->arena);
+    state->MazeImage = renderMaze(state, &state->Maze, &state->arena);
   }
   if (input->down.endedDown) {
-    position.y += 10.0f;
+    state->position.y += 10.0f;
   }
   if (input->up.endedDown) {
-    position.y += -10.0f;
+    state->position.y += -10.0f;
   }
   if (input->left.endedDown) {
-    position.x += -10.0f;
+    state->position.x += -10.0f;
   }
   if (input->right.endedDown) {
-    position.x += 10.0f;
+    state->position.x += 10.0f;
   }
   gmbDrawWeirdTexture(state, fb);
-  gmbCopyBitmapOffset(state, &mazeImage, 0, 0, mazeImage.width,
-                      mazeImage.height, fb, (int)position.x, (int)position.y);
+  gmbCopyBitmapOffset(state, &state->MazeImage, 0, 0, state->MazeImage.width,
+                      state->MazeImage.height, fb, (int)state->position.x,
+                      (int)state->position.y);
 
   char t[16];
 
   // gmbCopyBitmapOffset(state, &state->fontBitmap, 0, 0,
   // state->fontBitmap.width,
-  //                     state->fontBitmap.height, fb, (int)position.x,
-  //                     (int)position.y);
+  //                     state->fontBitmap.height, fb, (int)state->position.x,
+  //                     (int)state->position.y);
   gmbDrawText(state, fb, (char *)"LOL CURSOR", input->mousex, input->mousey);
   // and some floaty moving updatey text
   sprintf_s(t, sizeof(t), "%u", state->ticks);
-  gmbDrawText(state, fb, t, state->ticks % (fb->width - 50),
-              state->ticks % (fb->height - 50));
-  gmbDrawText(state, fb, (char *)"TICKS", state->ticks % (fb->width - 50),
-              (state->ticks % (fb->height - 50)) + 11);
+  gmbDrawText(state, fb, t, state->ticks % (fb->width - 200),
+              state->ticks % (fb->height - 200));
+  gmbDrawText(state, fb, (char *)"TICKS !", state->ticks % (fb->width - 200),
+              (state->ticks % (fb->height - 200)) + 11);
 
   // gmbCopyBitmap(state, &mazeImage, fb);
 
@@ -249,7 +247,7 @@ internal void gmbDrawWeirdTexture(gmbstate *state, framebuffer *fb) {
   for (int y = 0; y < fb->height; ++y) {
     for (int x = 0; x < fb->width; ++x) {
       *pixel = (uint8)(x + y + state->ticks) |
-               (uint8)((x / 24) + state->ticks) << 8 | (uint8)y << 16;
+               (uint8)((x * 2) + state->ticks) << 8 | (uint8)y << 16;
       pixel++;
     }
   }

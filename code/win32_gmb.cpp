@@ -45,15 +45,19 @@ GMBPLATFORMWRITEENTIREFILE(DEBUGPlatformWriteEntireFile) { return 0; }
 typedef struct win32_gmbdll {
   gmb_main_loop *gmbMainLoop;
   HMODULE Handle;
+  FILETIME lastCreationDate; // at the time of loading
 } win32_gmbdll;
 
 internal void win32_InitGmbDll(win32_gmbdll *dll) {
   // note(caf): we make a copy because otherwise visual studio's debugger holds
-  // the dll open and we can't compile a new one over it
+  // the dll and pdb open and we can't compile a new one over it
   if (!CopyFileA("\\build\\gmb.dll", "\\build\\gmb_copy.dll", 0)) {
     // todo(caf): handle errors
     return;
   }
+  // this isn't great. we should deal with this differently so we don't have to
+  // delete the original
+  // DeleteFileA("\\build\\gmb.dll");
   dll->Handle = LoadLibraryA("\\build\\gmb_copy.dll");
   if (!dll->Handle) {
     dll->gmbMainLoop = &gmbMainLoopStub;
@@ -66,6 +70,15 @@ internal void win32_InitGmbDll(win32_gmbdll *dll) {
       errord((char *)"Failed to GetProcAddress()");
     }
     dll->gmbMainLoop = ml;
+    HANDLE lastDllHandle;
+    lastDllHandle = CreateFileA("\\build\\gmb_copy.dll", 0, FILE_SHARE_WRITE, 0,
+                                OPEN_EXISTING, 0, 0);
+    if (lastDllHandle != INVALID_HANDLE_VALUE) {
+    }
+    // note(caf): we check the _modified_ date because silly me, creation date
+    // is literally the time the file with that name first existed
+    GetFileTime(lastDllHandle, 0, 0, &dll->lastCreationDate);
+    CloseHandle(lastDllHandle);
   }
 }
 
@@ -139,7 +152,6 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
   real32 ms = 0;
   framebuffer fb = {0};
   inputbuffer ib = {0};
-
   // note(caf): to watch for live reloading our main dll
   uint64 t = GetTickCount64();
   while (running) {
@@ -148,11 +160,24 @@ int WinMain(HINSTANCE instance, HINSTANCE previnstance, LPSTR cmdline,
       DWORD att;
       att = GetFileAttributesA("\\build\\gmb.dll");
       if (att != INVALID_FILE_ATTRIBUTES) {
-        // it existed, so unload our current copy and load the new one
-        win32_UnloadGmbDll(&gmbDLL);
-        win32_InitGmbDll(&gmbDLL);
-        // TODO(caf): use a lockfile to avoid the race condition of compiler
-        // creating file but buffer not flushed when we try to load it
+        HANDLE DllHandle;
+        DllHandle = CreateFileA("\\build\\gmb.dll", 0, FILE_SHARE_WRITE, 0,
+                                OPEN_EXISTING, 0, 0);
+        if (DllHandle == INVALID_HANDLE_VALUE) {
+          // TODO(caf): handle errors
+        }
+        FILETIME DllTime;
+        GetFileTime(DllHandle, 0, 0, &DllTime);
+        CloseHandle(DllHandle);
+        if (DllTime.dwHighDateTime != gmbDLL.lastCreationDate.dwHighDateTime ||
+            DllTime.dwLowDateTime != gmbDLL.lastCreationDate.dwLowDateTime) {
+          // it existed and was newer, so unload our current copy and load the
+          // new one
+          win32_UnloadGmbDll(&gmbDLL);
+          win32_InitGmbDll(&gmbDLL);
+          // TODO(caf): use a lockfile to avoid the race condition of compiler
+          // creating file but buffer not flushed when we try to load it
+        }
       }
     }
     QueryPerformanceCounter(&startFrame);
